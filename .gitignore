@@ -1,0 +1,37 @@
+# 환경 변수 (API 키 포함)
+.env
+
+# Python 캐시
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+
+# 가상환경
+venv/
+env/
+ENV/
+
+# 음성 파일
+*.wav
+*.mp3
+*.m4a
+*.ogg
+*.flac
+*.aac
+
+# 출력 파일
+output/
+uploads/
+
+# IDE 설정
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS 파일
+.DS_Store
+Thumbs.db
