@@ -2,12 +2,32 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from enum import Enum
 import os
 import shutil
 from datetime import datetime
 from stt_module import STTProcessor
 from gpt_summarizer import GPTSummarizer
 import uuid
+
+
+# GPT 모델 선택을 위한 Enum
+class GPTModel(str, Enum):
+    GPT_51_2025 = "gpt-5.1-2025-11-13"
+    GPT_50 = "gpt-5.0"
+    GPT_4O_MINI = "gpt-4o-mini"
+    GPT_4O = "gpt-4o"
+    GPT_4_TURBO = "gpt-4-turbo"
+    GPT_35_TURBO = "gpt-3.5-turbo"
+
+
+# Whisper 모델 선택을 위한 Enum
+class WhisperModel(str, Enum):
+    TINY = "tiny"
+    BASE = "base"
+    SMALL = "small"
+    MEDIUM = "medium"
+    LARGE = "large"
 
 # 전역 변수로 모델 저장
 stt_processor = None
@@ -81,6 +101,8 @@ async def health_check():
 @app.post("/transcribe")
 async def transcribe_audio(
     file: UploadFile = File(..., description="음성 파일 (mp3, wav, m4a 등)"),
+    gpt_model: GPTModel = Form(GPTModel.GPT_4O_MINI, description="사용할 GPT 모델 선택"),
+    whisper_model: WhisperModel = Form(WhisperModel.BASE, description="사용할 Whisper 모델 선택 (현재 세션에서는 서버 시작시 설정된 모델 사용)"),
     save_files: bool = Form(True, description="결과 파일을 서버에 저장할지 여부"),
     return_file: bool = Form(False, description="회의록을 텍스트 파일로 다운로드 (true 시 파일 응답, false 시 JSON 응답)")
 ):
@@ -89,6 +111,8 @@ async def transcribe_audio(
 
     Args:
         file: 음성 파일
+        gpt_model: GPT 모델 선택 (기본값: gpt-4o-mini)
+        whisper_model: Whisper 모델 선택 (참고용, 서버 재시작 필요)
         save_files: 결과를 파일로 저장할지 여부 (기본값: True)
         return_file: True이면 회의록 텍스트 파일로 응답, False이면 JSON으로 응답 (기본값: False)
 
@@ -124,8 +148,8 @@ async def transcribe_audio(
         print(f"변환 완료 (길이: {len(transcript)}자)")
 
         # 2단계: GPT 요약
-        print("GPT로 회의록 작성 중...")
-        summary = gpt_summarizer.summarize(transcript)
+        print(f"GPT ({gpt_model.value})로 회의록 작성 중...")
+        summary = gpt_summarizer.summarize(transcript, model=gpt_model.value)
         print("회의록 작성 완료!")
 
         # 3단계: 파일 저장 또는 응답 준비
