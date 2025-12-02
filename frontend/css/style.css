@@ -1,0 +1,796 @@
+/* 전역 스타일 */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --primary-color: #4F46E5;
+    --primary-hover: #4338CA;
+    --success-color: #10B981;
+    --danger-color: #EF4444;
+    --text-primary: #111827;
+    --text-secondary: #6B7280;
+    --bg-primary: #F9FAFB;
+    --bg-secondary: #FFFFFF;
+    --border-color: #E5E7EB;
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    color: var(--text-primary);
+    line-height: 1.6;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+}
+
+/* 헤더 */
+.header {
+    text-align: center;
+    margin-bottom: 3rem;
+    color: white;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.logo h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+}
+
+.subtitle {
+    font-size: 1.125rem;
+    opacity: 0.9;
+}
+
+/* 메인 컨텐츠 */
+.main-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+/* 카드 공통 스타일 */
+.upload-card,
+.progress-card,
+.result-card {
+    background: var(--bg-secondary);
+    border-radius: 1rem;
+    padding: 2rem;
+    box-shadow: var(--shadow-lg);
+}
+
+/* 업로드 섹션 */
+.upload-area {
+    border: 2px dashed var(--border-color);
+    border-radius: 0.75rem;
+    padding: 3rem 2rem;
+    text-align: center;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.upload-area:hover {
+    border-color: var(--primary-color);
+    background: #F3F4F6;
+}
+
+.upload-area.drag-over {
+    border-color: var(--primary-color);
+    background: #EEF2FF;
+}
+
+.upload-icon {
+    margin-bottom: 1rem;
+}
+
+.upload-area h3 {
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+}
+
+.upload-area p {
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+}
+
+/* 버튼 스타일 */
+.btn-browse {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.5rem;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-browse:hover {
+    background: #E5E7EB;
+}
+
+.btn-primary {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 1rem 2rem;
+    border-radius: 0.5rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    transition: all 0.2s ease;
+    margin-top: 1.5rem;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+}
+
+.btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-secondary {
+    background: white;
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.5rem;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    margin-top: 1rem;
+    transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+    background: var(--bg-primary);
+}
+
+.btn-download {
+    background: var(--success-color);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.2s ease;
+}
+
+.btn-download:hover {
+    background: #059669;
+    transform: translateY(-1px);
+}
+
+/* 파일 정보 */
+.file-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #F0FDF4;
+    border: 1px solid #86EFAC;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin-top: 1.5rem;
+}
+
+.file-details {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.file-name {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.file-size {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.btn-remove {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+    transition: all 0.2s ease;
+}
+
+.btn-remove:hover {
+    color: var(--danger-color);
+    background: #FEE2E2;
+}
+
+/* 옵션 섹션 */
+.options-section {
+    margin-top: 2rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.options-section h4 {
+    font-size: 1.125rem;
+    margin-bottom: 1.5rem;
+    color: var(--text-primary);
+}
+
+.option-group {
+    margin-bottom: 1.5rem;
+}
+
+.option-group label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.select-input {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    font-size: 1rem;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.select-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.select-input:disabled {
+    background: var(--bg-primary);
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.help-text {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+}
+
+.checkbox-group {
+    margin-top: 1rem;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 1.25rem;
+    height: 1.25rem;
+    cursor: pointer;
+}
+
+.checkbox-label span {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+}
+
+/* 진행 상태 */
+.progress-card {
+    animation: fadeIn 0.3s ease;
+}
+
+.progress-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2rem;
+}
+
+.progress-header h3 {
+    font-size: 1.5rem;
+    color: var(--text-primary);
+}
+
+.spinner {
+    width: 2rem;
+    height: 2rem;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* 전체 진행률 */
+.overall-progress {
+    margin-bottom: 2rem;
+    padding: 1.5rem;
+    background: var(--bg-primary);
+    border-radius: 0.75rem;
+}
+
+.progress-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.progress-label {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.progress-percentage {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
+.progress-bar-container {
+    width: 100%;
+    height: 1.5rem;
+    background: #E5E7EB;
+    border-radius: 9999px;
+    overflow: hidden;
+}
+
+.progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary-color) 0%, #818CF8 100%);
+    border-radius: 9999px;
+    transition: width 0.5s ease;
+    position: relative;
+}
+
+.progress-bar::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+.progress-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.step {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    background: var(--bg-primary);
+    transition: all 0.3s ease;
+}
+
+.step.active {
+    background: #EEF2FF;
+    border: 1px solid var(--primary-color);
+}
+
+.step.completed {
+    background: #F0FDF4;
+    border: 1px solid var(--success-color);
+}
+
+.step-indicator {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    background: white;
+    border: 2px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.step.active .step-indicator {
+    border-color: var(--primary-color);
+    background: var(--primary-color);
+    color: white;
+}
+
+.step.completed .step-indicator {
+    border-color: var(--success-color);
+    background: var(--success-color);
+    color: white;
+}
+
+.step-content {
+    flex: 1;
+}
+
+.step-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.step-title {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.step-percentage {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+.step.completed .step-percentage {
+    color: var(--success-color);
+}
+
+.step-status {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.step-progress-bar {
+    width: 100%;
+    height: 0.5rem;
+    background: #E5E7EB;
+    border-radius: 9999px;
+    overflow: hidden;
+}
+
+.step-progress-fill {
+    height: 100%;
+    background: var(--primary-color);
+    border-radius: 9999px;
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+.step.completed .step-progress-fill {
+    background: var(--success-color);
+}
+
+/* 결과 섹션 */
+.result-card {
+    animation: fadeIn 0.3s ease;
+}
+
+.result-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+}
+
+.result-header h3 {
+    font-size: 1.5rem;
+    color: var(--text-primary);
+}
+
+/* 탭 */
+.tabs {
+    display: flex;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 1.5rem;
+}
+
+.tab {
+    background: none;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.tab:hover {
+    color: var(--text-primary);
+}
+
+.tab.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+    animation: fadeIn 0.3s ease;
+}
+
+.content-box {
+    background: var(--bg-primary);
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.content-box pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: inherit;
+    font-size: 0.9375rem;
+    line-height: 1.8;
+    color: var(--text-primary);
+}
+
+/* 마크다운 컨텐츠 스타일 */
+.markdown-content {
+    font-size: 0.9375rem;
+    line-height: 1.8;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4 {
+    font-weight: 700;
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+    color: var(--text-primary);
+}
+
+.markdown-content h1 {
+    font-size: 1.875rem;
+    border-bottom: 2px solid var(--border-color);
+    padding-bottom: 0.5rem;
+}
+
+.markdown-content h2 {
+    font-size: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.5rem;
+}
+
+.markdown-content h3 {
+    font-size: 1.25rem;
+}
+
+.markdown-content h4 {
+    font-size: 1.125rem;
+}
+
+.markdown-content p {
+    margin-bottom: 1rem;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+    margin-left: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.markdown-content li {
+    margin-bottom: 0.5rem;
+}
+
+.markdown-content ul {
+    list-style-type: disc;
+}
+
+.markdown-content ol {
+    list-style-type: decimal;
+}
+
+.markdown-content strong {
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.markdown-content em {
+    font-style: italic;
+}
+
+.markdown-content code {
+    background: #F3F4F6;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.25rem;
+    font-family: 'Courier New', monospace;
+    font-size: 0.875rem;
+}
+
+.markdown-content pre {
+    background: #F3F4F6;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    overflow-x: auto;
+    margin-bottom: 1rem;
+}
+
+.markdown-content pre code {
+    background: none;
+    padding: 0;
+}
+
+.markdown-content blockquote {
+    border-left: 4px solid var(--primary-color);
+    padding-left: 1rem;
+    margin-left: 0;
+    margin-bottom: 1rem;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.markdown-content hr {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 1.5rem 0;
+}
+
+.markdown-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+}
+
+.markdown-content table th,
+.markdown-content table td {
+    border: 1px solid var(--border-color);
+    padding: 0.5rem;
+    text-align: left;
+}
+
+.markdown-content table th {
+    background: var(--bg-primary);
+    font-weight: 600;
+}
+
+.markdown-content a {
+    color: var(--primary-color);
+    text-decoration: underline;
+}
+
+.markdown-content a:hover {
+    color: var(--primary-hover);
+}
+
+/* 푸터 */
+.footer {
+    text-align: center;
+    margin-top: 3rem;
+    padding-top: 2rem;
+    color: white;
+    opacity: 0.8;
+}
+
+/* 애니메이션 */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 반응형 디자인 */
+@media (max-width: 768px) {
+    .container {
+        padding: 1rem;
+    }
+
+    .logo h1 {
+        font-size: 2rem;
+    }
+
+    .subtitle {
+        font-size: 1rem;
+    }
+
+    .upload-card,
+    .progress-card,
+    .result-card {
+        padding: 1.5rem;
+    }
+
+    .upload-area {
+        padding: 2rem 1rem;
+    }
+
+    .result-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .btn-download {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .tabs {
+        overflow-x: auto;
+    }
+
+    .tab {
+        white-space: nowrap;
+    }
+}
+
+@media (max-width: 480px) {
+    .logo {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .logo h1 {
+        font-size: 1.75rem;
+    }
+
+    .file-info {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+}

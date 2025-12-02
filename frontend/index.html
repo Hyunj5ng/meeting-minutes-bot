@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>회의록 봇 - AI 회의록 자동 생성</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 헤더 -->
+        <header class="header">
+            <div class="logo">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="40" height="40" rx="8" fill="#4F46E5"/>
+                    <path d="M20 10L12 18H16V26H24V18H28L20 10Z" fill="white"/>
+                </svg>
+                <h1>회의록 봇</h1>
+            </div>
+            <p class="subtitle">음성 파일을 업로드하면 AI가 자동으로 회의록을 생성합니다</p>
+        </header>
+
+        <!-- 메인 컨텐츠 -->
+        <main class="main-content">
+            <!-- 업로드 섹션 -->
+            <section class="upload-section">
+                <div class="upload-card">
+                    <div class="upload-area" id="uploadArea">
+                        <svg class="upload-icon" width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M32 16V40M32 16L24 24M32 16L40 24M16 48H48" stroke="#9CA3AF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <h3>음성 파일을 드래그하거나 클릭하세요</h3>
+                        <p>지원 형식: MP3, WAV, M4A, OGG, FLAC, AAC</p>
+                        <input type="file" id="fileInput" accept=".mp3,.wav,.m4a,.ogg,.flac,.aac" hidden>
+                        <button class="btn-browse" onclick="document.getElementById('fileInput').click()">
+                            파일 선택
+                        </button>
+                    </div>
+
+                    <!-- 선택된 파일 정보 -->
+                    <div class="file-info" id="fileInfo" style="display: none;">
+                        <div class="file-details">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="#10B981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            <div>
+                                <p class="file-name" id="fileName"></p>
+                                <p class="file-size" id="fileSize"></p>
+                            </div>
+                        </div>
+                        <button class="btn-remove" id="removeFile">
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- 설정 옵션 -->
+                    <div class="options-section">
+                        <h4>Whisper 모델 설정</h4>
+
+                        <div class="option-group">
+                            <label for="whisperModel">Whisper 모델 (서버 설정)</label>
+                            <select id="whisperModel" class="select-input" disabled>
+                                <option value="tiny">Tiny (가장 빠름)</option>
+                                <option value="base" selected>Base (권장)</option>
+                                <option value="small">Small (더 정확)</option>
+                                <option value="medium">Medium (높은 정확도)</option>
+                                <option value="large">Large (최고 정확도)</option>
+                            </select>
+                            <p class="help-text">* 서버 시작 시 설정된 모델이 사용됩니다</p>
+                        </div>
+                    </div>
+
+                    <!-- 변환 버튼 -->
+                    <button class="btn-primary" id="convertBtn" disabled>
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M10 4V16M10 16L14 12M10 16L6 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        텍스트로 변환하기
+                    </button>
+                </div>
+            </section>
+
+            <!-- 진행 상태 -->
+            <section class="progress-section" id="progressSection" style="display: none;">
+                <div class="progress-card">
+                    <div class="progress-header">
+                        <h3>처리 중...</h3>
+                        <div class="spinner"></div>
+                    </div>
+
+                    <!-- 전체 진행률 -->
+                    <div class="overall-progress">
+                        <div class="progress-info">
+                            <span class="progress-label">전체 진행률</span>
+                            <span class="progress-percentage" id="overallProgress">0%</span>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="overallProgressBar" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <div class="progress-steps">
+                        <div class="step" id="step1">
+                            <div class="step-indicator">1</div>
+                            <div class="step-content">
+                                <div class="step-header">
+                                    <p class="step-title">음성 파일 업로드</p>
+                                    <span class="step-percentage" id="step1Progress">0%</span>
+                                </div>
+                                <p class="step-status">대기 중...</p>
+                                <div class="step-progress-bar">
+                                    <div class="step-progress-fill" id="step1ProgressBar"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="step" id="step2">
+                            <div class="step-indicator">2</div>
+                            <div class="step-content">
+                                <div class="step-header">
+                                    <p class="step-title">음성을 텍스트로 변환 (STT)</p>
+                                    <span class="step-percentage" id="step2Progress">0%</span>
+                                </div>
+                                <p class="step-status">대기 중...</p>
+                                <div class="step-progress-bar">
+                                    <div class="step-progress-fill" id="step2ProgressBar"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 리뷰 섹션 (STT 완료 후) -->
+            <section class="review-section" id="reviewSection" style="display: none;">
+                <div class="result-card">
+                    <div class="result-header">
+                        <h3>✅ 텍스트 변환 완료!</h3>
+                    </div>
+
+                    <p class="subtitle">변환된 텍스트를 확인하고, 회의록을 생성하시겠어요?</p>
+
+                    <!-- 원본 텍스트 -->
+                    <div class="content-box">
+                        <h4>변환된 텍스트</h4>
+                        <pre id="reviewTranscriptText"></pre>
+                    </div>
+
+                    <!-- GPT 모델 선택 -->
+                    <div class="options-section">
+                        <h4>GPT 모델 선택</h4>
+                        <div class="option-group">
+                            <label for="gptModelReview">회의록 생성에 사용할 GPT 모델</label>
+                            <select id="gptModelReview" class="select-input">
+                                <option value="gpt-5.1-2025-11-13">GPT-5.1 (최신, 최고 품질)</option>
+                                <option value="gpt-5.0">GPT-5.0 (높은 품질)</option>
+                                <option value="gpt-4o-mini" selected>GPT-4o Mini (권장, 빠르고 저렴)</option>
+                                <option value="gpt-4o">GPT-4o (뛰어난 품질)</option>
+                                <option value="gpt-4-turbo">GPT-4 Turbo (빠른 GPT-4)</option>
+                                <option value="gpt-3.5-turbo">GPT-3.5 Turbo (가장 저렴)</option>
+                            </select>
+                        </div>
+
+                        <div class="checkbox-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="saveFilesReview" checked>
+                                <span>서버에 결과 파일 저장</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 버튼들 -->
+                    <div style="display: flex; gap: 12px;">
+                        <button class="btn-primary" id="proceedBtn" style="flex: 1;">
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M10 4V16M10 16L14 12M10 16L6 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            회의록 생성하기
+                        </button>
+                        <button class="btn-secondary" id="cancelBtn">
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            </svg>
+                            취소
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 요약 진행 상태 -->
+            <section class="progress-section" id="summaryProgressSection" style="display: none;">
+                <div class="progress-card">
+                    <div class="progress-header">
+                        <h3>회의록 생성 중...</h3>
+                        <div class="spinner"></div>
+                    </div>
+
+                    <!-- 전체 진행률 -->
+                    <div class="overall-progress">
+                        <div class="progress-info">
+                            <span class="progress-label">진행률</span>
+                            <span class="progress-percentage" id="summaryOverallProgress">0%</span>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="summaryOverallProgressBar" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <div class="progress-steps">
+                        <div class="step" id="summaryStep">
+                            <div class="step-indicator">3</div>
+                            <div class="step-content">
+                                <div class="step-header">
+                                    <p class="step-title">회의록 생성 (GPT)</p>
+                                    <span class="step-percentage" id="summaryStepProgress">0%</span>
+                                </div>
+                                <p class="step-status">대기 중...</p>
+                                <div class="step-progress-bar">
+                                    <div class="step-progress-fill" id="summaryStepProgressBar"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 결과 섹션 -->
+            <section class="result-section" id="resultSection" style="display: none;">
+                <div class="result-card">
+                    <div class="result-header">
+                        <h3>✅ 회의록 생성 완료!</h3>
+                        <button class="btn-download" id="downloadBtn">
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M10 12L6 8M10 12L14 8M10 12V4M4 16H16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            다운로드
+                        </button>
+                    </div>
+
+                    <!-- 탭 -->
+                    <div class="tabs">
+                        <button class="tab active" data-tab="summary">회의록</button>
+                        <button class="tab" data-tab="transcript">원본 텍스트</button>
+                    </div>
+
+                    <!-- 회의록 -->
+                    <div class="tab-content active" id="summaryContent">
+                        <div class="content-box markdown-content">
+                            <div id="summaryText"></div>
+                        </div>
+                    </div>
+
+                    <!-- 원본 텍스트 -->
+                    <div class="tab-content" id="transcriptContent">
+                        <div class="content-box">
+                            <pre id="transcriptText"></pre>
+                        </div>
+                    </div>
+
+                    <!-- 다시 시작 버튼 -->
+                    <button class="btn-secondary" id="resetBtn">
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M4 10C4 6.68629 6.68629 4 10 4C13.3137 4 16 6.68629 16 10C16 13.3137 13.3137 16 10 16M4 10L2 8M4 10L6 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        새로운 파일 변환하기
+                    </button>
+                </div>
+            </section>
+        </main>
+
+        <!-- 푸터 -->
+        <footer class="footer">
+            <p>Made with ❤️ using OpenAI Whisper & GPT</p>
+        </footer>
+    </div>
+
+    <!-- Markdown 렌더링 라이브러리 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

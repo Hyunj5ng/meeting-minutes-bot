@@ -98,6 +98,142 @@ async def health_check():
     }
 
 
+@app.post("/transcribe-only")
+async def transcribe_only(
+    file: UploadFile = File(..., description="음성 파일 (mp3, wav, m4a 등)"),
+    whisper_model: WhisperModel = Form(WhisperModel.BASE, description="사용할 Whisper 모델 선택 (현재 세션에서는 서버 시작시 설정된 모델 사용)")
+):
+    """
+    음성 파일을 텍스트로만 변환 (STT만 수행)
+
+    Args:
+        file: 음성 파일
+        whisper_model: Whisper 모델 선택 (참고용, 서버 재시작 필요)
+
+    Returns:
+        JSON 응답 (transcript만 포함)
+    """
+    # 파일 확장자 확인
+    allowed_extensions = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac']
+    file_ext = os.path.splitext(file.filename)[1].lower()
+
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"지원하지 않는 파일 형식입니다. 허용된 형식: {', '.join(allowed_extensions)}"
+        )
+
+    # 고유한 파일명 생성
+    unique_id = str(uuid.uuid4())[:8]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    temp_filename = f"{timestamp}_{unique_id}{file_ext}"
+    temp_file_path = os.path.join(UPLOAD_DIR, temp_filename)
+
+    try:
+        # 업로드된 파일 저장
+        with open(temp_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        print(f"파일 업로드 완료: {temp_file_path}")
+
+        # STT (음성 -> 텍스트)
+        print("음성을 텍스트로 변환 중...")
+        transcript = stt_processor.transcribe(temp_file_path)
+        print(f"변환 완료 (길이: {len(transcript)}자)")
+
+        return JSONResponse(content={
+            "success": True,
+            "filename": file.filename,
+            "transcript": transcript,
+            "timestamp": timestamp
+        })
+
+    except Exception as e:
+        print(f"오류 발생: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"처리 중 오류 발생: {str(e)}")
+
+    finally:
+        # 업로드된 임시 파일 삭제
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+            print(f"임시 파일 삭제: {temp_file_path}")
+
+
+@app.post("/summarize")
+async def summarize_transcript(
+    transcript: str = Form(..., description="요약할 텍스트"),
+    gpt_model: GPTModel = Form(GPTModel.GPT_4O_MINI, description="사용할 GPT 모델 선택"),
+    save_files: bool = Form(True, description="결과 파일을 서버에 저장할지 여부"),
+    return_file: bool = Form(False, description="회의록을 텍스트 파일로 다운로드 (true 시 파일 응답, false 시 JSON 응답)")
+):
+    """
+    텍스트를 GPT로 요약하여 회의록 생성
+
+    Args:
+        transcript: 요약할 원본 텍스트
+        gpt_model: GPT 모델 선택 (기본값: gpt-4o-mini)
+        save_files: 결과를 파일로 저장할지 여부 (기본값: True)
+        return_file: True이면 회의록 텍스트 파일로 응답, False이면 JSON으로 응답 (기본값: False)
+
+    Returns:
+        JSON 응답 또는 텍스트 파일 다운로드
+    """
+    unique_id = str(uuid.uuid4())[:8]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    try:
+        # GPT 요약
+        print(f"GPT ({gpt_model.value})로 회의록 작성 중...")
+        summary = gpt_summarizer.summarize(transcript, model=gpt_model.value)
+        print("회의록 작성 완료!")
+
+        # 파일 저장 또는 응답 준비
+        summary_path = os.path.join(OUTPUT_DIR, f"meeting_minutes_{timestamp}_{unique_id}.txt")
+
+        # 회의록 파일 생성 (return_file이 True이거나 save_files가 True인 경우)
+        if return_file or save_files:
+            with open(summary_path, "w", encoding="utf-8") as f:
+                f.write(summary)
+            print(f"회의록 파일 생성: {summary_path}")
+
+        # 원본 텍스트 파일 저장 (save_files가 True인 경우에만)
+        if save_files:
+            transcript_path = os.path.join(OUTPUT_DIR, f"transcript_{timestamp}_{unique_id}.txt")
+            with open(transcript_path, "w", encoding="utf-8") as f:
+                f.write(transcript)
+            print(f"원본 텍스트 파일 저장: {transcript_path}")
+
+        # return_file이 True이면 파일로 응답
+        if return_file:
+            return FileResponse(
+                path=summary_path,
+                media_type="text/plain",
+                filename=f"meeting_minutes_{timestamp}.txt",
+                headers={
+                    "Content-Disposition": f'attachment; filename="meeting_minutes_{timestamp}.txt"'
+                }
+            )
+
+        # 기본: JSON 응답
+        response_data = {
+            "success": True,
+            "summary": summary,
+            "timestamp": timestamp
+        }
+
+        if save_files:
+            response_data["saved_files"] = {
+                "transcript": transcript_path,
+                "summary": summary_path
+            }
+
+        return JSONResponse(content=response_data)
+
+    except Exception as e:
+        print(f"오류 발생: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"처리 중 오류 발생: {str(e)}")
+
+
 @app.post("/transcribe")
 async def transcribe_audio(
     file: UploadFile = File(..., description="음성 파일 (mp3, wav, m4a 등)"),
@@ -107,7 +243,7 @@ async def transcribe_audio(
     return_file: bool = Form(False, description="회의록을 텍스트 파일로 다운로드 (true 시 파일 응답, false 시 JSON 응답)")
 ):
     """
-    음성 파일을 업로드하여 회의록 생성
+    음성 파일을 업로드하여 회의록 생성 (레거시 엔드포인트, 한번에 처리)
 
     Args:
         file: 음성 파일
