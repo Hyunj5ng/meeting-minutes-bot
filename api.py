@@ -21,7 +21,7 @@ import crud
 # GPT 모델 선택을 위한 Enum
 class GPTModel(str, Enum):
     GPT_51_2025 = "gpt-5.1-2025-11-13"
-    GPT_50 = "gpt-5.0"
+    GPT_50 = "gpt-5-2025-08-07"
     GPT_4O_MINI = "gpt-4o-mini"
     GPT_4O = "gpt-4o"
     GPT_4_TURBO = "gpt-4-turbo"
