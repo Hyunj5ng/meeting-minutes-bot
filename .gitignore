@@ -10,6 +10,7 @@ __pycache__/
 
 # 가상환경
 venv/
+.venv/
 env/
 ENV/
 
@@ -35,3 +36,8 @@ uploads/
 # OS 파일
 .DS_Store
 Thumbs.db
+
+# Database
+*.db
+*.sqlite
+*.sqlite3

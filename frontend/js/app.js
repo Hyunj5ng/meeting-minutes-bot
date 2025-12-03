@@ -5,6 +5,7 @@ const API_BASE_URL = 'http://localhost:8000';
 let selectedFile = null;
 let transcriptData = null;
 let resultData = null;
+let audioDuration = 0; // 오디오 길이 (초)
 
 // DOM 요소
 const uploadArea = document.getElementById('uploadArea');
@@ -86,9 +87,8 @@ function handleFileSelect(e) {
 }
 
 // 파일 처리
-function handleFile(file) {
+async function handleFile(file) {
     // 파일 형식 검증
-    const allowedTypes = ['audio/mpeg', 'audio/wav', 'audio/m4a', 'audio/ogg', 'audio/flac', 'audio/aac'];
     const allowedExtensions = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac'];
 
     const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
@@ -100,6 +100,15 @@ function handleFile(file) {
 
     selectedFile = file;
 
+    // 오디오 길이 계산
+    try {
+        audioDuration = await getAudioDuration(file);
+        console.log(`오디오 길이: ${Math.round(audioDuration)}초 (${Math.floor(audioDuration / 60)}분 ${Math.round(audioDuration % 60)}초)`);
+    } catch (error) {
+        console.warn('오디오 길이 계산 실패, 파일 크기 기반으로 추정합니다:', error);
+        audioDuration = 0; // 실패 시 0으로 설정하여 파일 크기 기반으로 계산
+    }
+
     // 파일 정보 표시
     fileName.textContent = file.name;
     fileSize.textContent = formatFileSize(file.size);
@@ -107,6 +116,26 @@ function handleFile(file) {
     uploadArea.style.display = 'none';
     fileInfo.style.display = 'flex';
     convertBtn.disabled = false;
+}
+
+// 오디오 파일의 재생 시간 계산
+function getAudioDuration(file) {
+    return new Promise((resolve, reject) => {
+        const audio = new Audio();
+        const url = URL.createObjectURL(file);
+
+        audio.addEventListener('loadedmetadata', () => {
+            URL.revokeObjectURL(url);
+            resolve(audio.duration);
+        });
+
+        audio.addEventListener('error', () => {
+            URL.revokeObjectURL(url);
+            reject(new Error('오디오 메타데이터 로드 실패'));
+        });
+
+        audio.src = url;
+    });
 }
 
 // 파일 크기 포맷팅
@@ -141,21 +170,64 @@ async function handleConvert() {
     updateStepProgress(2, 0, '', '대기 중...');
 
     try {
+        // 예상 시간 계산 (오디오 길이 기반)
+        let estimatedSeconds;
+
+        if (audioDuration > 0) {
+            // 오디오 재생 시간 기준: 1분당 5초
+            const audioMinutes = audioDuration / 60;
+            estimatedSeconds = Math.ceil(audioMinutes * 5);
+        } else {
+            // 오디오 길이를 모르면 파일 크기 기반 (fallback)
+            const fileSizeMB = selectedFile.size / (1024 * 1024);
+            estimatedSeconds = Math.ceil(fileSizeMB * 4);
+        }
+
+        const estimatedMinutes = Math.floor(estimatedSeconds / 60);
+        const remainingSeconds = estimatedSeconds % 60;
+
+        let timeMessage = '';
+        if (estimatedMinutes > 0) {
+            timeMessage = `예상 시간: 약 ${estimatedMinutes}분 ${remainingSeconds}초`;
+        } else {
+            timeMessage = `예상 시간: 약 ${estimatedSeconds}초`;
+        }
+
+        // 오디오 길이 정보도 표시
+        let audioDurationMessage = '';
+        if (audioDuration > 0) {
+            const audioDurationMinutes = Math.floor(audioDuration / 60);
+            const audioDurationSeconds = Math.round(audioDuration % 60);
+            audioDurationMessage = ` | 오디오: ${audioDurationMinutes}분 ${audioDurationSeconds}초`;
+        }
+
         // FormData 생성
         const formData = new FormData();
         formData.append('file', selectedFile);
         formData.append('whisper_model', document.getElementById('whisperModel').value);
+        formData.append('audio_duration', audioDuration || 0);
+        formData.append('file_size', selectedFile.size);
 
-        // 1단계: 업로드 (0-50%)
+        // 1단계: 업로드 (0-15%)
         updateStepProgress(1, 10, 'active', '파일 업로드 중...');
         updateProgress(10);
 
-        await simulateProgress(1, 10, 40, 1000); // 1초 동안 10%에서 40%로
-        updateProgress(40);
+        await simulateProgress(1, 10, 30, 800);
 
         // API 호출 시작
-        updateStepProgress(1, 50, 'active', '서버로 전송 중...');
-        updateProgress(45);
+        updateStepProgress(1, 50, 'active', '서버로 전송 완료');
+        updateProgress(15);
+
+        const startTime = Date.now();
+
+        // 2단계: STT 시작 (15-100%)
+        updateStepProgress(1, 100, 'completed', '완료!');
+        updateStepProgress(2, 2, 'active', `서버에서 음성을 텍스트로 변환 중입니다... (${timeMessage}${audioDurationMessage})`);
+        updateProgress(20);
+
+        // 서버 처리 중 천천히 진행 (예상 시간에 맞춰서 95%까지 진행)
+        // 실제 처리 시간보다 약간 여유를 두기 위해 예상 시간의 110%를 duration으로 사용
+        const progressInterval = simulateSlowStepProgress(2, 2, 95, estimatedSeconds * 1000 * 1.1);
 
         const response = await fetch(`${API_BASE_URL}/transcribe-only`, {
             method: 'POST',
@@ -164,27 +236,36 @@ async function handleConvert() {
 
         if (!response.ok) {
             const error = await response.json();
+            clearInterval(progressInterval);
             throw new Error(error.detail || '처리 중 오류가 발생했습니다');
         }
 
-        // 업로드 완료
-        updateStepProgress(1, 100, 'completed', '완료!');
-        updateProgress(50);
-
-        // 2단계: STT (50-100%)
-        updateStepProgress(2, 10, 'active', '음성 분석 중...');
-        updateProgress(55);
-
-        // 응답 대기 중 진행률 시뮬레이션
-        const progressInterval = simulateStepProgress(2, 10, 90, 100);
-
         const data = await response.json();
-        transcriptData = data;
+        transcriptData = {
+            ...data,
+            recordId: data.record_id,  // DB 레코드 ID 저장
+            fileSize: selectedFile.size,
+            audioDuration: audioDuration
+        };
 
         clearInterval(progressInterval);
 
+        const elapsedTime = Math.round((Date.now() - startTime) / 1000);
+        const elapsedMinutes = Math.floor(elapsedTime / 60);
+        const elapsedRemainingSeconds = elapsedTime % 60;
+
+        let elapsedMessage = '';
+        if (elapsedMinutes > 0) {
+            elapsedMessage = `${elapsedMinutes}분 ${elapsedRemainingSeconds}초`;
+        } else {
+            elapsedMessage = `${elapsedTime}초`;
+        }
+
+        // 실제 소요 시간 저장
+        transcriptData.elapsedTime = elapsedTime;
+
         // STT 완료
-        updateStepProgress(2, 100, 'completed', '완료!');
+        updateStepProgress(2, 100, 'completed', `완료! (소요 시간: ${elapsedMessage})`);
         updateProgress(100);
 
         // 리뷰 섹션으로 이동
@@ -206,6 +287,31 @@ function showReview(transcript) {
     // 변환된 텍스트 표시
     document.getElementById('reviewTranscriptText').textContent = transcript;
 
+    // 파일 정보 표시
+    document.getElementById('reviewFileSize').textContent = formatFileSize(transcriptData.fileSize);
+
+    // 오디오 길이 표시
+    if (transcriptData.audioDuration && transcriptData.audioDuration > 0) {
+        const minutes = Math.floor(transcriptData.audioDuration / 60);
+        const seconds = Math.round(transcriptData.audioDuration % 60);
+        document.getElementById('reviewAudioDuration').textContent = `${minutes}분 ${seconds}초`;
+    } else {
+        document.getElementById('reviewAudioDuration').textContent = '정보 없음';
+    }
+
+    // 처리 시간 표시
+    if (transcriptData.elapsedTime) {
+        const minutes = Math.floor(transcriptData.elapsedTime / 60);
+        const seconds = transcriptData.elapsedTime % 60;
+        if (minutes > 0) {
+            document.getElementById('reviewElapsedTime').textContent = `${minutes}분 ${seconds}초`;
+        } else {
+            document.getElementById('reviewElapsedTime').textContent = `${seconds}초`;
+        }
+    } else {
+        document.getElementById('reviewElapsedTime').textContent = '-';
+    }
+
     // 스크롤을 리뷰 섹션으로 이동
     reviewSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -225,7 +331,7 @@ async function handleSummarize() {
     try {
         // FormData 생성
         const formData = new FormData();
-        formData.append('transcript', transcriptData.transcript);
+        formData.append('record_id', transcriptData.recordId);  // DB 레코드 ID 전달
         formData.append('gpt_model', document.getElementById('gptModelReview').value);
         formData.append('save_files', document.getElementById('saveFilesReview').checked);
         formData.append('return_file', 'false');
@@ -331,6 +437,30 @@ function simulateStepProgress(stepNumber, fromPercent, toPercent, duration) {
             stepProgressText.textContent = Math.round(currentPercent) + '%';
         }
     }, 100);
+}
+
+// 느린 진행률 시뮬레이션 (서버 처리 중)
+function simulateSlowStepProgress(stepNumber, fromPercent, toPercent, duration) {
+    const startTime = Date.now();
+    const totalTime = duration;
+
+    return setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / totalTime, 1);
+        const currentPercent = fromPercent + (toPercent - fromPercent) * progress;
+
+        const stepProgressBar = document.getElementById(`step${stepNumber}ProgressBar`);
+        const stepProgressText = document.getElementById(`step${stepNumber}Progress`);
+
+        if (stepProgressBar && stepProgressText) {
+            stepProgressBar.style.width = currentPercent + '%';
+            stepProgressText.textContent = Math.round(currentPercent) + '%';
+        }
+
+        // 전체 진행률도 천천히 업데이트 (25% 시작 -> 85% 목표)
+        const overallPercent = 25 + (currentPercent - fromPercent) * 0.7;
+        updateProgress(overallPercent);
+    }, 200); // 200ms 간격으로 부드럽게 업데이트
 }
 
 // 진행 단계 업데이트
@@ -450,7 +580,7 @@ async function downloadResult() {
     try {
         // FormData 생성
         const formData = new FormData();
-        formData.append('transcript', transcriptData.transcript);
+        formData.append('record_id', transcriptData.recordId);  // DB 레코드 ID 전달
         formData.append('gpt_model', document.getElementById('gptModelReview').value);
         formData.append('save_files', 'true');
         formData.append('return_file', 'true');
@@ -498,6 +628,7 @@ function reset() {
     selectedFile = null;
     transcriptData = null;
     resultData = null;
+    audioDuration = 0;
     fileInput.value = '';
 
     document.querySelector('.upload-section').style.display = 'block';
