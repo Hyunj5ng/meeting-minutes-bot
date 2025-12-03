@@ -14,7 +14,7 @@ import time
 
 # 데이터베이스 관련 임포트
 from database import get_db, engine, Base
-from models import MeetingRecord
+from models import TranscriptRecord, SummaryRecord
 import crud
 
 
@@ -156,8 +156,8 @@ async def transcribe_only(
         stt_time = time.time() - start_time
         print(f"변환 완료 (길이: {len(transcript)}자, 소요 시간: {stt_time:.2f}초)")
 
-        # DB에 저장
-        record = crud.create_meeting_record(
+        # DB에 저장 (TranscriptRecord 생성)
+        transcript_record = crud.create_transcript_record(
             db=db,
             filename=file.filename,
             file_size=file_size,
@@ -166,11 +166,11 @@ async def transcribe_only(
             audio_duration=audio_duration,
             stt_processing_time=stt_time
         )
-        print(f"DB 저장 완료 (ID: {record.id})")
+        print(f"DB 저장 완료 (Transcript ID: {transcript_record.id})")
 
         return JSONResponse(content={
             "success": True,
-            "record_id": record.id,
+            "transcript_id": transcript_record.id,
             "filename": file.filename,
             "transcript": transcript,
             "timestamp": timestamp
@@ -189,17 +189,17 @@ async def transcribe_only(
 
 @app.post("/summarize")
 async def summarize_transcript(
-    record_id: int = Form(..., description="회의록 레코드 ID"),
+    transcript_id: int = Form(..., description="Transcript 레코드 ID"),
     gpt_model: GPTModel = Form(GPTModel.GPT_4O_MINI, description="사용할 GPT 모델 선택"),
     save_files: bool = Form(True, description="결과 파일을 서버에 저장할지 여부"),
     return_file: bool = Form(False, description="회의록을 텍스트 파일로 다운로드 (true 시 파일 응답, false 시 JSON 응답)"),
     db: Session = Depends(get_db)
 ):
     """
-    텍스트를 GPT로 요약하여 회의록 생성 및 DB 업데이트
+    텍스트를 GPT로 요약하여 회의록 생성 및 새 SummaryRecord 생성
 
     Args:
-        record_id: 회의록 레코드 ID (STT 단계에서 생성된 ID)
+        transcript_id: Transcript 레코드 ID (STT 단계에서 생성된 ID)
         gpt_model: GPT 모델 선택 (기본값: gpt-4o-mini)
         save_files: 결과를 파일로 저장할지 여부 (기본값: True)
         return_file: True이면 회의록 텍스트 파일로 응답, False이면 JSON으로 응답 (기본값: False)
@@ -208,12 +208,12 @@ async def summarize_transcript(
     Returns:
         JSON 응답 또는 텍스트 파일 다운로드
     """
-    # DB에서 레코드 조회
-    record = crud.get_meeting_record(db, record_id)
-    if not record:
-        raise HTTPException(status_code=404, detail="회의록 레코드를 찾을 수 없습니다")
+    # DB에서 Transcript 레코드 조회
+    transcript_record = crud.get_transcript_record(db, transcript_id)
+    if not transcript_record:
+        raise HTTPException(status_code=404, detail="Transcript 레코드를 찾을 수 없습니다")
 
-    transcript = record.transcript
+    transcript = transcript_record.transcript
     unique_id = str(uuid.uuid4())[:8]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -225,15 +225,15 @@ async def summarize_transcript(
         gpt_time = time.time() - start_time
         print(f"회의록 작성 완료! (소요 시간: {gpt_time:.2f}초)")
 
-        # DB 업데이트
-        crud.update_meeting_summary(
+        # DB에 새 SummaryRecord 생성 (업데이트가 아닌 생성)
+        summary_record = crud.create_summary_record(
             db=db,
-            record_id=record_id,
+            transcript_id=transcript_id,
             summary=summary,
             gpt_model=gpt_model.value,
             gpt_processing_time=gpt_time
         )
-        print(f"DB 업데이트 완료 (ID: {record_id})")
+        print(f"DB 저장 완료 (Summary ID: {summary_record.id}, Transcript ID: {transcript_id})")
 
         # 파일 저장 또는 응답 준비
         summary_path = os.path.join(OUTPUT_DIR, f"meeting_minutes_{timestamp}_{unique_id}.txt")
@@ -265,6 +265,8 @@ async def summarize_transcript(
         # 기본: JSON 응답
         response_data = {
             "success": True,
+            "summary_id": summary_record.id,
+            "transcript_id": transcript_id,
             "summary": summary,
             "timestamp": timestamp
         }
@@ -427,35 +429,74 @@ async def cleanup_files(days: int = 7):
 # 데이터베이스 조회 엔드포인트
 # ============================================
 
-@app.get("/records")
-async def get_records(
+@app.get("/transcripts")
+async def get_transcripts(
     skip: int = 0,
     limit: int = 20,
     db: Session = Depends(get_db)
 ):
-    """모든 회의록 레코드 조회 (페이지네이션)"""
-    records = crud.get_all_meeting_records(db, skip=skip, limit=limit)
+    """모든 STT 변환 레코드 조회 (페이지네이션)"""
+    records = crud.get_all_transcript_records(db, skip=skip, limit=limit)
     return {"success": True, "count": len(records), "records": records}
 
 
-@app.get("/records/{record_id}")
-async def get_record(record_id: int, db: Session = Depends(get_db)):
-    """특정 회의록 레코드 조회"""
-    record = crud.get_meeting_record(db, record_id)
+@app.get("/transcripts/{transcript_id}")
+async def get_transcript(transcript_id: int, db: Session = Depends(get_db)):
+    """특정 STT 레코드 조회"""
+    record = crud.get_transcript_record(db, transcript_id)
     if not record:
-        raise HTTPException(status_code=404, detail="레코드를 찾을 수 없습니다")
+        raise HTTPException(status_code=404, detail="Transcript 레코드를 찾을 수 없습니다")
     return {"success": True, "record": record}
 
 
-@app.get("/search")
-async def search_records(
+@app.get("/transcripts/{transcript_id}/summaries")
+async def get_transcript_summaries(transcript_id: int, db: Session = Depends(get_db)):
+    """특정 STT 레코드에 대한 모든 요약 조회"""
+    summaries = crud.get_summaries_by_transcript(db, transcript_id)
+    return {"success": True, "count": len(summaries), "summaries": summaries}
+
+
+@app.get("/summaries")
+async def get_summaries(
+    skip: int = 0,
+    limit: int = 20,
+    db: Session = Depends(get_db)
+):
+    """모든 요약 레코드 조회 (페이지네이션)"""
+    records = crud.get_all_summary_records(db, skip=skip, limit=limit)
+    return {"success": True, "count": len(records), "records": records}
+
+
+@app.get("/summaries/{summary_id}")
+async def get_summary(summary_id: int, db: Session = Depends(get_db)):
+    """특정 요약 레코드 조회"""
+    record = crud.get_summary_record(db, summary_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Summary 레코드를 찾을 수 없습니다")
+    return {"success": True, "record": record}
+
+
+@app.get("/search/transcripts")
+async def search_transcripts(
     keyword: str,
     skip: int = 0,
     limit: int = 20,
     db: Session = Depends(get_db)
 ):
-    """키워드로 회의록 검색"""
-    records = crud.search_meeting_records(db, keyword, skip=skip, limit=limit)
+    """키워드로 STT 레코드 검색"""
+    records = crud.search_transcript_records(db, keyword, skip=skip, limit=limit)
+    return {"success": True, "count": len(records), "records": records}
+
+
+@app.get("/search/summaries")
+async def search_summaries(
+    keyword: str,
+    skip: int = 0,
+    limit: int = 20,
+    db: Session = Depends(get_db)
+):
+    """키워드로 요약 레코드 검색"""
+    records = crud.search_summary_records(db, keyword, skip=skip, limit=limit)
     return {"success": True, "count": len(records), "records": records}
 
 

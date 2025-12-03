@@ -6,6 +6,7 @@ let selectedFile = null;
 let transcriptData = null;
 let resultData = null;
 let audioDuration = 0; // 오디오 길이 (초)
+let summaryHistory = []; // 여러 요약 결과 저장
 
 // DOM 요소
 const uploadArea = document.getElementById('uploadArea');
@@ -21,6 +22,7 @@ const summaryProgressSection = document.getElementById('summaryProgressSection')
 const resultSection = document.getElementById('resultSection');
 const downloadBtn = document.getElementById('downloadBtn');
 const resetBtn = document.getElementById('resetBtn');
+const backToReviewBtn = document.getElementById('backToReviewBtn');
 const proceedBtn = document.getElementById('proceedBtn');
 const cancelBtn = document.getElementById('cancelBtn');
 
@@ -49,6 +51,7 @@ function setupEventListeners() {
     // 결과 관련
     downloadBtn.addEventListener('click', downloadResult);
     resetBtn.addEventListener('click', reset);
+    backToReviewBtn.addEventListener('click', backToReview);
 
     // 탭 전환
     const tabs = document.querySelectorAll('.tab');
@@ -243,7 +246,7 @@ async function handleConvert() {
         const data = await response.json();
         transcriptData = {
             ...data,
-            recordId: data.record_id,  // DB 레코드 ID 저장
+            transcriptId: data.transcript_id,  // DB transcript ID 저장
             fileSize: selectedFile.size,
             audioDuration: audioDuration
         };
@@ -331,7 +334,7 @@ async function handleSummarize() {
     try {
         // FormData 생성
         const formData = new FormData();
-        formData.append('record_id', transcriptData.recordId);  // DB 레코드 ID 전달
+        formData.append('transcript_id', transcriptData.transcriptId);  // DB transcript ID 전달
         formData.append('gpt_model', document.getElementById('gptModelReview').value);
         formData.append('save_files', document.getElementById('saveFilesReview').checked);
         formData.append('return_file', 'false');
@@ -353,10 +356,24 @@ async function handleSummarize() {
         }
 
         const data = await response.json();
+        const gptModel = document.getElementById('gptModelReview').value;
+
         resultData = {
             ...transcriptData,
-            summary: data.summary
+            summary: data.summary,
+            summaryId: data.summary_id,
+            gptModel: gptModel
         };
+
+        // 요약 결과를 히스토리에 저장
+        summaryHistory.push({
+            summaryId: data.summary_id,
+            transcriptId: data.transcript_id,
+            gptModel: gptModel,
+            summary: data.summary,
+            timestamp: data.timestamp,
+            createdAt: new Date().toISOString()
+        });
 
         clearInterval(progressInterval);
 
@@ -580,7 +597,7 @@ async function downloadResult() {
     try {
         // FormData 생성
         const formData = new FormData();
-        formData.append('record_id', transcriptData.recordId);  // DB 레코드 ID 전달
+        formData.append('transcript_id', transcriptData.transcriptId);  // DB transcript ID 전달
         formData.append('gpt_model', document.getElementById('gptModelReview').value);
         formData.append('save_files', 'true');
         formData.append('return_file', 'true');
@@ -623,12 +640,23 @@ async function downloadResult() {
     }
 }
 
+// 뒤로가기 (결과 화면 → 리뷰 화면)
+function backToReview() {
+    resultSection.style.display = 'none';
+    summaryProgressSection.style.display = 'none';
+    reviewSection.style.display = 'block';
+
+    // 스크롤을 리뷰 섹션으로 이동
+    reviewSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 // 리셋
 function reset() {
     selectedFile = null;
     transcriptData = null;
     resultData = null;
     audioDuration = 0;
+    summaryHistory = [];
     fileInput.value = '';
 
     document.querySelector('.upload-section').style.display = 'block';
