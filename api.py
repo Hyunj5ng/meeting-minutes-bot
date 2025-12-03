@@ -11,6 +11,7 @@ from stt_module import STTProcessor
 from gpt_summarizer import GPTSummarizer
 import uuid
 import time
+import boto3
 
 # 데이터베이스 관련 임포트
 from database import get_db, engine, Base
@@ -45,6 +46,42 @@ OUTPUT_DIR = "output"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+S3_BUCKET = os.getenv("S3_BUCKET_NAME")
+S3_REGION = os.getenv("S3_REGION")
+S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL")
+s3_client = None
+
+if S3_BUCKET:
+    s3_client = boto3.client(
+        "s3",
+        region_name=S3_REGION,
+        endpoint_url=S3_ENDPOINT_URL,
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+    )
+
+
+def upload_file_to_s3(local_path: str, key: str, content_type: str = "text/plain"):
+    """저장된 파일을 S3(또는 호환 스토리지)로 업로드."""
+    if not s3_client or not S3_BUCKET:
+        return None
+    try:
+        s3_client.upload_file(
+            local_path,
+            S3_BUCKET,
+            key,
+            ExtraArgs={"ContentType": content_type},
+        )
+        if S3_ENDPOINT_URL:
+            base = S3_ENDPOINT_URL.rstrip("/")
+            return f"{base}/{S3_BUCKET}/{key}"
+        if S3_REGION:
+            return f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{key}"
+        return f"s3://{S3_BUCKET}/{key}"
+    except Exception as e:
+        print(f"S3 업로드 실패 ({local_path}): {e}")
+        return None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -52,7 +89,7 @@ async def lifespan(app: FastAPI):
     # 시작 시
     global stt_processor, gpt_summarizer
     print("모델 초기화 중...")
-    stt_processor = STTProcessor(model_size="base")
+    stt_processor = STTProcessor()
     gpt_summarizer = GPTSummarizer()
     print("모델 초기화 완료!")
 
@@ -107,7 +144,7 @@ async def health_check():
 @app.post("/transcribe-only")
 async def transcribe_only(
     file: UploadFile = File(..., description="음성 파일 (mp3, wav, m4a 등)"),
-    whisper_model: WhisperModel = Form(WhisperModel.BASE, description="사용할 Whisper 모델 선택 (현재 세션에서는 서버 시작시 설정된 모델 사용)"),
+    whisper_model: WhisperModel = Form(WhisperModel.BASE, description="Whisper API는 단일 모델 사용 (값은 기록용)"),
     audio_duration: float = Form(None, description="오디오 길이 (초)"),
     file_size: int = Form(..., description="파일 크기 (bytes)"),
     db: Session = Depends(get_db)
@@ -236,12 +273,18 @@ async def summarize_transcript(
 
         # 파일 저장 또는 응답 준비
         summary_path = os.path.join(OUTPUT_DIR, f"meeting_minutes_{timestamp}_{unique_id}.txt")
+        summary_url = None
 
         # 회의록 파일 생성 (return_file이 True이거나 save_files가 True인 경우)
         if return_file or save_files:
             with open(summary_path, "w", encoding="utf-8") as f:
                 f.write(summary)
             print(f"회의록 파일 생성: {summary_path}")
+            summary_url = upload_file_to_s3(
+                summary_path,
+                f"summaries/meeting_minutes_{timestamp}_{unique_id}.txt",
+                content_type="text/plain"
+            )
 
         # 원본 텍스트 파일 저장 (save_files가 True인 경우에만)
         if save_files:
@@ -249,6 +292,14 @@ async def summarize_transcript(
             with open(transcript_path, "w", encoding="utf-8") as f:
                 f.write(transcript)
             print(f"원본 텍스트 파일 저장: {transcript_path}")
+            transcript_url = upload_file_to_s3(
+                transcript_path,
+                f"transcripts/transcript_{timestamp}_{unique_id}.txt",
+                content_type="text/plain"
+            )
+        else:
+            transcript_path = None
+            transcript_url = None
 
         # return_file이 True이면 파일로 응답
         if return_file:
@@ -273,7 +324,9 @@ async def summarize_transcript(
         if save_files:
             response_data["saved_files"] = {
                 "transcript": transcript_path,
-                "summary": summary_path
+                "transcript_url": transcript_url,
+                "summary": summary_path,
+                "summary_url": summary_url
             }
 
         return JSONResponse(content=response_data)
@@ -287,7 +340,7 @@ async def summarize_transcript(
 async def transcribe_audio(
     file: UploadFile = File(..., description="음성 파일 (mp3, wav, m4a 등)"),
     gpt_model: GPTModel = Form(GPTModel.GPT_5_MINI, description="사용할 GPT 모델 선택"),
-    whisper_model: WhisperModel = Form(WhisperModel.BASE, description="사용할 Whisper 모델 선택 (현재 세션에서는 서버 시작시 설정된 모델 사용)"),
+    whisper_model: WhisperModel = Form(WhisperModel.BASE, description="Whisper API는 단일 모델 사용 (값은 기록용)"),
     save_files: bool = Form(True, description="결과 파일을 서버에 저장할지 여부"),
     return_file: bool = Form(False, description="회의록을 텍스트 파일로 다운로드 (true 시 파일 응답, false 시 JSON 응답)")
 ):
@@ -339,12 +392,18 @@ async def transcribe_audio(
 
         # 3단계: 파일 저장 또는 응답 준비
         summary_path = os.path.join(OUTPUT_DIR, f"meeting_minutes_{timestamp}_{unique_id}.txt")
+        summary_url = None
 
         # 회의록 파일 생성 (return_file이 True이거나 save_files가 True인 경우)
         if return_file or save_files:
             with open(summary_path, "w", encoding="utf-8") as f:
                 f.write(summary)
             print(f"회의록 파일 생성: {summary_path}")
+            summary_url = upload_file_to_s3(
+                summary_path,
+                f"summaries/meeting_minutes_{timestamp}_{unique_id}.txt",
+                content_type="text/plain"
+            )
 
         # 원본 텍스트 파일 저장 (save_files가 True인 경우에만)
         if save_files:
@@ -352,6 +411,14 @@ async def transcribe_audio(
             with open(transcript_path, "w", encoding="utf-8") as f:
                 f.write(transcript)
             print(f"원본 텍스트 파일 저장: {transcript_path}")
+            transcript_url = upload_file_to_s3(
+                transcript_path,
+                f"transcripts/transcript_{timestamp}_{unique_id}.txt",
+                content_type="text/plain"
+            )
+        else:
+            transcript_path = None
+            transcript_url = None
 
         # return_file이 True이면 파일로 응답
         if return_file:
@@ -376,7 +443,9 @@ async def transcribe_audio(
         if save_files:
             response_data["saved_files"] = {
                 "transcript": transcript_path,
-                "summary": summary_path
+                "transcript_url": transcript_url,
+                "summary": summary_path,
+                "summary_url": summary_url
             }
 
         return JSONResponse(content=response_data)

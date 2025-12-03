@@ -4,7 +4,7 @@
 
 ## 주요 기능
 
-- **STT (Speech-to-Text)**: OpenAI Whisper 오픈소스 모델을 사용하여 음성을 텍스트로 변환
+- **STT (Speech-to-Text)**: OpenAI Whisper API로 음성을 텍스트로 변환 (로컬 모델 없이 바로 사용)
 - **회의록 생성**: GPT API를 사용하여 변환된 텍스트를 구조화된 회의록으로 정리
 - **자동 저장**: 원본 텍스트와 정리된 회의록을 자동으로 파일로 저장
 - **REST API**: FastAPI 기반 웹 API 제공 (웹 클라이언트와 연동 가능)
@@ -43,6 +43,15 @@ cp .env.example .env
 `.env` 파일 내용:
 ```
 OPENAI_API_KEY=sk-your-actual-api-key-here
+# 선택: 외부 DB 연결 (예: Vercel Postgres / Railway / Supabase)
+# DATABASE_URL=postgresql://...
+
+# 선택: S3 또는 호환 스토리지(R2 등) 업로드 설정
+# S3_BUCKET_NAME=your-bucket
+# S3_REGION=ap-northeast-2
+# S3_ENDPOINT_URL=https://<custom-endpoint>   # 옵션
+# AWS_ACCESS_KEY_ID=...
+# AWS_SECRET_ACCESS_KEY=...
 ```
 
 ## 빠른 시작 (로컬 실행)
@@ -160,21 +169,6 @@ python main.py <음성파일경로>
 python main.py meeting.mp3
 ```
 
-#### Whisper 모델 크기 선택
-
-정확도와 속도를 조절할 수 있습니다:
-
-```bash
-python main.py meeting.mp3 small
-```
-
-**모델 옵션:**
-- `tiny`: 가장 빠름, 낮은 정확도
-- `base`: 균형잡힌 선택 (기본값, 권장)
-- `small`: 더 정확하지만 느림
-- `medium`: 높은 정확도, 매우 느림
-- `large`: 최고 정확도, 가장 느림
-
 ### 지원하는 음성 파일 형식
 
 - MP3
@@ -198,6 +192,30 @@ python main.py meeting.mp3 small
 - 액션 아이템
 - 기타 사항
 
+## 컨테이너 배포 (Railway/Render/Fly/Cloud Run 등)
+
+1) 환경 변수 설정 (필수)
+- `OPENAI_API_KEY`: OpenAI 키
+- `DATABASE_URL`: 외부 Postgres URL (예: Railway/Render/Supabase)
+- 선택: `S3_BUCKET_NAME`, `S3_REGION`, `S3_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (파일을 S3/R2 등에 업로드하려면 설정)
+
+2) 이미지 빌드
+```bash
+docker build -t meeting-minutes-bot .
+```
+
+3) 컨테이너 실행 (로컬 확인)
+```bash
+docker run -p 8000:8000 \
+  -e OPENAI_API_KEY=$OPENAI_API_KEY \
+  -e DATABASE_URL=$DATABASE_URL \
+  meeting-minutes-bot
+```
+이후 http://localhost:8000/docs 로 접속해 확인합니다.
+
+4) 호스팅 서비스에 올리기
+- Dockerfile 기반 배포를 지원하는 서비스(Railway/Render/Fly/Cloud Run)에 위 환경 변수를 설정하고 빌드/배포하면 됩니다.
+
 ## 프로젝트 구조
 
 ```
@@ -209,6 +227,8 @@ meeting-minutes-bot/
 ├── requirements.txt       # 필요한 패키지 목록
 ├── .env.example          # 환경변수 예시 파일
 ├── .gitignore            # Git 제외 파일 목록
+├── Dockerfile            # 컨테이너 빌드 설정
+├── .dockerignore         # 도커 컨텍스트 제외 목록
 ├── README.md             # 프로젝트 설명서
 ├── uploads/              # 업로드 임시 파일 폴더 (자동 생성)
 └── output/               # 결과 파일 저장 폴더 (자동 생성)
@@ -216,9 +236,9 @@ meeting-minutes-bot/
 
 ## 주의사항
 
-- OpenAI API 사용 시 요금이 발생합니다 (GPT-4o-mini는 저렴한 편)
+- OpenAI API 사용 시 요금이 발생합니다 (기본 GPT 모델은 `gpt-5-mini`)
 - 긴 오디오 파일은 처리 시간이 오래 걸릴 수 있습니다
-- 처음 실행 시 Whisper 모델 다운로드로 시간이 소요될 수 있습니다
+- Whisper STT는 OpenAI API를 사용하므로 로컬 모델 다운로드는 필요 없습니다
 
 ## GitHub에 코드 저장하기
 
@@ -281,9 +301,9 @@ python api.py
 - `.env` 파일이 올바른 위치에 있는지 확인
 - API 키가 제대로 입력되었는지 확인
 
-### Whisper 모델 로딩 실패
-- 인터넷 연결 확인 (첫 실행 시 모델 다운로드 필요)
-- 충분한 디스크 공간 확보
+### Whisper API 호출 실패
+- `OPENAI_API_KEY`와 네트워크 상태 확인
+- OpenAI 상태 페이지 점검 후 재시도
 
 ### ffmpeg 오류
 - **macOS**: `brew install ffmpeg`

@@ -1,22 +1,23 @@
-import whisper
 import os
+from dotenv import load_dotenv
+from openai import OpenAI
 
 
 class STTProcessor:
-    def __init__(self, model_size="base"):
+    def __init__(self, model_size: str = None):
         """
-        Whisper 모델을 초기화합니다.
-
-        Args:
-            model_size: 모델 크기 (tiny, base, small, medium, large)
-                       - tiny: 가장 빠르지만 정확도 낮음
-                       - base: 속도와 정확도 균형 (권장)
-                       - small: 더 정확하지만 느림
-                       - medium/large: 가장 정확하지만 매우 느림
+        OpenAI Whisper API를 사용한 STT 처리기.
+        로컬 모델을 로드하지 않고 API로 음성→텍스트를 수행합니다.
+        model_size 매개변수는 하위 호환을 위해 받아도 무시합니다.
         """
-        print(f"Whisper {model_size} 모델을 로딩 중...")
-        self.model = whisper.load_model(model_size)
-        print("모델 로딩 완료!")
+        load_dotenv()
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "OPENAI_API_KEY가 설정되지 않았습니다. "
+                ".env에 OpenAI API 키를 추가해주세요."
+            )
+        self.client = OpenAI(api_key=api_key)
 
     def transcribe(self, audio_file_path):
         """
@@ -31,7 +32,11 @@ class STTProcessor:
         if not os.path.exists(audio_file_path):
             raise FileNotFoundError(f"파일을 찾을 수 없습니다: {audio_file_path}")
 
-        print(f"음성 파일 변환 중: {audio_file_path}")
-        result = self.model.transcribe(audio_file_path, language="ko")
-
-        return result["text"]
+        print(f"음성 파일 변환 중(Whisper API): {audio_file_path}")
+        with open(audio_file_path, "rb") as f:
+            result = self.client.audio.transcriptions.create(
+                model="whisper-1",
+                file=f,
+                language="ko"
+            )
+        return result.text

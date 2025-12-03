@@ -1,0 +1,25 @@
+.git
+.gitignore
+.venv
+venv
+env
+ENV
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+Thumbs.db
+
+# Local data & artifacts
+uploads
+output
+*.db
+*.sqlite
+*.sqlite3
+server.log
+
+# Node/Frontend build artifacts (if added later)
+node_modules
+dist
+build

@@ -31,18 +31,12 @@ def save_output(transcript, summary, output_dir="output"):
 
 def main():
     if len(sys.argv) < 2:
-        print("사용법: python main.py <음성파일경로> [whisper모델크기]")
+        print("사용법: python main.py <음성파일경로>")
         print("예시: python main.py meeting.mp3")
-        print("예시: python main.py meeting.mp3 small")
-        print("\nWhisper 모델 크기 옵션: tiny, base, small, medium, large")
-        print("  - tiny: 가장 빠름, 낮은 정확도")
-        print("  - base: 균형잡힌 선택 (기본값)")
-        print("  - small: 더 정확하지만 느림")
-        print("  - medium/large: 최고 정확도, 매우 느림")
+        print("\nWhisper STT는 OpenAI API(whisper-1)를 사용합니다. 추가 모델 선택은 필요 없습니다.")
         sys.exit(1)
 
     audio_file = sys.argv[1]
-    model_size = sys.argv[2] if len(sys.argv) > 2 else "base"
 
     if not os.path.exists(audio_file):
         print(f"오류: 파일을 찾을 수 없습니다 - {audio_file}")
@@ -55,7 +49,7 @@ def main():
     try:
         # 1단계: STT (음성 -> 텍스트)
         print("\n[1/3] 음성을 텍스트로 변환 중...")
-        stt = STTProcessor(model_size=model_size)
+        stt = STTProcessor()
         transcript = stt.transcribe(audio_file)
         print(f"\n변환된 텍스트 (첫 200자):\n{transcript[:200]}...\n")
 
