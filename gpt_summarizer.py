@@ -20,13 +20,13 @@ class GPTSummarizer:
 
         self.client = OpenAI(api_key=api_key)
 
-    def summarize(self, text, model="gpt-4o-mini"):
+    def summarize(self, text, model="gpt-5-mini"):
         """
         회의 내용을 GPT를 사용하여 정리된 회의록으로 변환합니다.
 
         Args:
             text: STT로 변환된 원본 텍스트
-            model: 사용할 GPT 모델 (기본값: gpt-4o-mini, 더 높은 품질: gpt-4o)
+            model: 사용할 GPT 모델 (기본값: gpt-5-mini)
 
         Returns:
             str: 정리된 회의록
