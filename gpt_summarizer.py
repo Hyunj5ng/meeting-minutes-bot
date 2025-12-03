@@ -47,17 +47,24 @@ class GPTSummarizer:
 {text}
 """
 
-        response = self.client.chat.completions.create(
-            model=model,
-            messages=[
+        # GPT-5 모델들은 temperature를 지원하지 않음 (기본값 1만 사용 가능)
+        # 다른 모델들은 temperature=0.3 사용
+        api_params = {
+            "model": model,
+            "messages": [
                 {
                     "role": "system",
                     "content": "당신은 전문적인 회의록 작성 비서입니다. 회의 내용을 명확하고 체계적으로 정리합니다.",
                 },
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.3,
-        )
+        }
+
+        # GPT-5 모델이 아닌 경우에만 temperature 설정
+        if not model.startswith("gpt-5"):
+            api_params["temperature"] = 0.3
+
+        response = self.client.chat.completions.create(**api_params)
 
         summary = response.choices[0].message.content
         print("회의록 작성 완료!")
