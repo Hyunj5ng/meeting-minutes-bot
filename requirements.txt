@@ -1,5 +1,4 @@
 openai
-openai-whisper
 python-dotenv
 fastapi
 uvicorn[standard]
