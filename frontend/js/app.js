@@ -1,5 +1,6 @@
 // API 엔드포인트 설정
-const API_BASE_URL = 'http://localhost:8000';
+// 같은 서버에서 서빙되므로 상대 경로 사용
+const API_BASE_URL = '';
 
 // 전역 변수
 let selectedFile = null;

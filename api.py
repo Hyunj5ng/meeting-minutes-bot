@@ -1,6 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from enum import Enum
 from sqlalchemy.orm import Session
@@ -566,6 +567,22 @@ async def search_summaries(
     """키워드로 요약 레코드 검색"""
     records = crud.search_summary_records(db, keyword, skip=skip, limit=limit)
     return {"success": True, "count": len(records), "records": records}
+
+
+# ============================================
+# 프론트엔드 정적 파일 서빙
+# ============================================
+
+# CSS, JS 정적 파일 마운트
+app.mount("/css", StaticFiles(directory="frontend/css"), name="css")
+app.mount("/js", StaticFiles(directory="frontend/js"), name="js")
+
+
+@app.get("/app", response_class=HTMLResponse)
+async def serve_frontend():
+    """프론트엔드 메인 페이지 서빙"""
+    with open("frontend/index.html", "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
 
 
 if __name__ == "__main__":
