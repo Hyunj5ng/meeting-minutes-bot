@@ -89,6 +89,12 @@ async def lifespan(app: FastAPI):
     """서버 시작/종료 시 실행되는 이벤트"""
     # 시작 시
     global stt_processor, gpt_summarizer
+
+    # 데이터베이스 테이블 생성
+    print("데이터베이스 테이블 생성 중...")
+    Base.metadata.create_all(bind=engine)
+    print("데이터베이스 테이블 생성 완료!")
+
     print("모델 초기화 중...")
     stt_processor = STTProcessor()
     gpt_summarizer = GPTSummarizer()
