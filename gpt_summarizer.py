@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 
 # Claude 모델 목록
-CLAUDE_MODELS = ["claude-sonnet-4-5-20250514", "claude-haiku-4-5-20250514"]
+CLAUDE_MODELS = ["claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001"]
 
 
 class GPTSummarizer:
@@ -40,7 +40,7 @@ class GPTSummarizer:
             text: STT로 변환된 원본 텍스트
             model: 사용할 모델
                    - OpenAI: gpt-5.1, gpt-5, gpt-5-mini, gpt-5-nano, gpt-4.1
-                   - Claude: claude-sonnet-4-5-20250514, claude-haiku-4-5-20250514
+                   - Claude: claude-sonnet-4-5-20250929, claude-haiku-4-5-20251001
 
         Returns:
             str: 정리된 회의록

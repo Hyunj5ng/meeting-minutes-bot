@@ -29,8 +29,8 @@ class LLMModel(str, Enum):
     GPT_5_NANO = "gpt-5-nano"  # 속도·비용 최적, 짧은 회의 메모 요약에 적합
     GPT_41 = "gpt-4.1"  # 추론 없는 일반형, 가벼운 회의 요약용
     # Anthropic Claude 모델
-    CLAUDE_SONNET_45 = "claude-sonnet-4-5-20250514"  # 고품질 회의록, 빠른 속도
-    CLAUDE_HAIKU_45 = "claude-haiku-4-5-20250514"  # 가장 빠르고 경제적
+    CLAUDE_SONNET_45 = "claude-sonnet-4-5-20250929"  # 고품질 회의록, 빠른 속도
+    CLAUDE_HAIKU_45 = "claude-haiku-4-5-20251001"  # 가장 빠르고 경제적
 
 # 하위 호환성을 위한 별칭
 GPTModel = LLMModel
