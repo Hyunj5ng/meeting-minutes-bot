@@ -32,7 +32,7 @@
                         <h3>음성 파일을 드래그하거나 클릭하세요</h3>
                         <p>지원 형식: MP3, WAV, M4A, OGG, FLAC, AAC</p>
                         <input type="file" id="fileInput" accept=".mp3,.wav,.m4a,.ogg,.flac,.aac" hidden>
-                        <button class="btn-browse" onclick="document.getElementById('fileInput').click()">
+                        <button class="btn-browse" onclick="event.stopPropagation(); document.getElementById('fileInput').click()">
                             파일 선택
                         </button>
                     </div>
