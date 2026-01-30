@@ -1,5 +1,31 @@
 # Meeting Minutes Bot - 변경 이력
 
+## 2026-01-30: 오늘 작업 요약
+
+### 완료된 작업
+1. **사용자 동선 간소화**
+   - 리뷰 화면 제거, STT 완료 후 자동 요약 진행
+   - 업로드 화면에 AI 모델 선택 추가 (Claude Sonnet 4.5 기본값)
+
+2. **PostgreSQL DB 연결 확인**
+   - Railway PostgreSQL 서비스 연결 완료
+   - API를 통한 데이터 조회 방법 문서화
+
+3. **로컬 개발 환경 설정**
+   - Python 가상환경 설정 (`source venv/bin/activate`)
+   - 환경변수 설정: `.env` 파일에 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`
+   - 로컬 실행: `python api.py` → http://localhost:8000/app
+
+4. **상용 배포 완료**
+   - 커밋: `65e1d2b` - feat: 사용자 동선 간소화 - 자동 STT + 요약 처리
+   - Railway 자동 배포 완료, 상용 환경 정상 동작 확인
+
+### 트러블슈팅
+- **브라우저 캐시 문제**: 상용 환경에서 `Cannot read properties of null` 오류 발생
+- **해결**: 강력 새로고침 (Cmd+Shift+R)으로 캐시 무효화
+
+---
+
 ## 2026-01-30: 사용자 동선 간소화
 
 ### 변경 내용
