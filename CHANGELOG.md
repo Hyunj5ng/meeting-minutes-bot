@@ -1,5 +1,97 @@
 # Meeting Minutes Bot - 변경 이력
 
+## 2026-01-30: 사용자 동선 간소화
+
+### 변경 내용
+- **변경 전**: 음원 업로드 → STT 대기 → 리뷰 화면 → 요약 버튼 클릭 → 요약 대기 → 결과
+- **변경 후**: 음원 업로드 → STT + 요약 자동 처리 → 결과
+
+### 주요 수정사항
+
+#### 1. 업로드 화면에 AI 모델 선택 추가
+- Claude Sonnet 4.5 (기본값) - 일반적인 회의록 요약에 가장 적합
+- GPT-5.1 - 세부 내용을 포함한 심층 요약
+
+#### 2. 리뷰 화면 제거
+- 중간 단계 없이 바로 결과 화면으로 이동
+- 사용자 경험 개선 (클릭 수 감소)
+
+#### 3. 자동 요약 처리
+- STT 완료 후 자동으로 요약 진행
+- 업로드 화면에서 선택한 모델로 처리
+
+### 수정 파일
+- `frontend/index.html`: 모델 선택 UI 추가, 리뷰 섹션 제거
+- `frontend/js/app.js`: handleConvert/handleSummarize 로직 수정
+
+---
+
+## 2026-01-30: PostgreSQL 데이터베이스 연결
+
+### 데이터베이스 설정
+- **호스팅**: Railway PostgreSQL 서비스
+- **연결 방식**: Railway 대시보드에서 PostgreSQL 서비스 추가 후 환경변수 참조
+
+### 환경변수 설정 (Railway Variables)
+```
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+```
+> Railway에서 PostgreSQL 서비스의 DATABASE_URL을 참조하는 방식
+
+### 상용 데이터 조회 방법
+
+#### 1. API를 통한 조회
+```bash
+# 모든 STT 기록 조회
+curl -s https://meeting-bot.jonny.kim/transcripts | python3 -m json.tool
+
+# 모든 요약 기록 조회
+curl -s https://meeting-bot.jonny.kim/summaries | python3 -m json.tool
+
+# 특정 STT 기록 조회
+curl -s https://meeting-bot.jonny.kim/transcripts/1 | python3 -m json.tool
+
+# 키워드 검색
+curl -s "https://meeting-bot.jonny.kim/search/transcripts?keyword=회의" | python3 -m json.tool
+```
+
+#### 2. DB 클라이언트로 직접 연결
+1. Railway 대시보드 → PostgreSQL 서비스 → **Connect** 탭
+2. 연결 정보 확인:
+   - Host, Port, User, Password, Database
+3. TablePlus, DBeaver, pgAdmin 등에서 연결
+
+#### 3. Railway 대시보드에서 조회
+1. Railway 대시보드 → PostgreSQL 서비스 → **Data** 탭
+2. 테이블 조회 및 쿼리 실행 가능
+
+### 데이터베이스 스키마
+```sql
+-- STT 결과 테이블
+CREATE TABLE transcript_records (
+    id SERIAL PRIMARY KEY,
+    filename VARCHAR,
+    file_size INTEGER,
+    audio_duration FLOAT,
+    transcript TEXT,
+    whisper_model VARCHAR,
+    stt_processing_time FLOAT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 요약 결과 테이블 (1:N 관계)
+CREATE TABLE summary_records (
+    id SERIAL PRIMARY KEY,
+    transcript_id INTEGER REFERENCES transcript_records(id) ON DELETE CASCADE,
+    summary TEXT,
+    gpt_model VARCHAR,
+    gpt_processing_time FLOAT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+---
+
 ## 2025-01-15: Railway 배포 완료
 
 ### 배포 정보

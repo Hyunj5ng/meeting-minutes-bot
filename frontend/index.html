@@ -55,20 +55,16 @@
                         </button>
                     </div>
 
-                    <!-- 설정 옵션 -->
+                    <!-- AI 모델 선택 -->
                     <div class="options-section">
-                        <h4>Whisper 모델 설정</h4>
+                        <h4>AI 모델 선택</h4>
 
                         <div class="option-group">
-                            <label for="whisperModel">Whisper 모델 (서버 설정)</label>
-                            <select id="whisperModel" class="select-input" disabled>
-                                <option value="tiny">Tiny (가장 빠름)</option>
-                                <option value="base" selected>Base (권장)</option>
-                                <option value="small">Small (더 정확)</option>
-                                <option value="medium">Medium (높은 정확도)</option>
-                                <option value="large">Large (최고 정확도)</option>
+                            <label for="gptModelUpload">회의록 생성에 사용할 AI 모델</label>
+                            <select id="gptModelUpload" class="select-input">
+                                <option value="claude-sonnet-4-5-20250929" selected>Claude Sonnet 4.5 - 일반적인 회의록 요약에 가장 적합</option>
+                                <option value="gpt-5.1">GPT-5.1 - 세부 내용을 포함한 심층 요약</option>
                             </select>
-                            <p class="help-text">* 서버 시작 시 설정된 모델이 사용됩니다</p>
                         </div>
                     </div>
 
@@ -77,7 +73,7 @@
                         <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <path d="M10 4V16M10 16L14 12M10 16L6 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
-                        텍스트로 변환하기
+                        회의록 생성하기
                     </button>
                 </div>
             </section>
@@ -128,83 +124,6 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- 리뷰 섹션 (STT 완료 후) -->
-            <section class="review-section" id="reviewSection" style="display: none;">
-                <div class="result-card">
-                    <div class="result-header">
-                        <h3>✅ 텍스트 변환 완료!</h3>
-                    </div>
-
-                    <p class="subtitle">변환된 텍스트를 확인하고, 회의록을 생성하시겠어요?</p>
-
-                    <!-- 처리 정보 -->
-                    <div class="info-box" style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 24px; flex-wrap: wrap;">
-                        <div style="flex: 1; min-width: 150px;">
-                            <div style="font-size: 13px; color: #6c757d; margin-bottom: 4px;">파일 크기</div>
-                            <div style="font-size: 16px; font-weight: 600; color: #212529;" id="reviewFileSize">-</div>
-                        </div>
-                        <div style="flex: 1; min-width: 150px;">
-                            <div style="font-size: 13px; color: #6c757d; margin-bottom: 4px;">오디오 길이</div>
-                            <div style="font-size: 16px; font-weight: 600; color: #212529;" id="reviewAudioDuration">-</div>
-                        </div>
-                        <div style="flex: 1; min-width: 150px;">
-                            <div style="font-size: 13px; color: #6c757d; margin-bottom: 4px;">처리 시간</div>
-                            <div style="font-size: 16px; font-weight: 600; color: #0d6efd;" id="reviewElapsedTime">-</div>
-                        </div>
-                    </div>
-
-                    <!-- 원본 텍스트 -->
-                    <div class="content-box">
-                        <h4>변환된 텍스트</h4>
-                        <pre id="reviewTranscriptText"></pre>
-                    </div>
-
-                    <!-- LLM 모델 선택 -->
-                    <div class="options-section">
-                        <h4>AI 모델 선택</h4>
-                        <div class="option-group">
-                            <label for="gptModelReview">회의록 생성에 사용할 AI 모델</label>
-                            <select id="gptModelReview" class="select-input">
-                                <optgroup label="OpenAI GPT">
-                                    <option value="gpt-5.1">GPT 5.1 (복잡한 결정/코드 협업용 최고 품질)</option>
-                                    <option value="gpt-5">GPT 5 (안정적인 추론형, 회의 자동화 기본)</option>
-                                    <option value="gpt-5-mini" selected>GPT 5 mini (권장: 빠르고 경제적인 회의록 생성)</option>
-                                    <option value="gpt-5-nano">GPT 5 nano (가장 빠르고 저렴, 짧은 메모 정리)</option>
-                                    <option value="gpt-4.1">GPT 4.1 (가벼운 일반 요약용)</option>
-                                </optgroup>
-                                <optgroup label="Anthropic Claude">
-                                    <option value="claude-sonnet-4-5-20250929">Claude Sonnet 4.5 (고품질, 빠른 속도)</option>
-                                    <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (가장 빠르고 경제적)</option>
-                                </optgroup>
-                            </select>
-                        </div>
-
-                        <div class="checkbox-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="saveFilesReview" checked>
-                                <span>서버에 결과 파일 저장</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- 버튼들 -->
-                    <div style="display: flex; gap: 12px;">
-                        <button class="btn-primary" id="proceedBtn" style="flex: 1;">
-                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M10 4V16M10 16L14 12M10 16L6 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                            회의록 생성하기
-                        </button>
-                        <button class="btn-secondary" id="cancelBtn">
-                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            </svg>
-                            취소
-                        </button>
                     </div>
                 </div>
             </section>
@@ -281,12 +200,6 @@
 
                     <!-- 액션 버튼들 -->
                     <div style="display: flex; gap: 12px; margin-top: 24px;">
-                        <button class="btn-secondary" id="backToReviewBtn" style="flex: 1;">
-                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M10 18L2 10L10 2M2 10H18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                            다른 모델로 다시 생성
-                        </button>
                         <button class="btn-secondary" id="resetBtn" style="flex: 1;">
                             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M4 10C4 6.68629 6.68629 4 10 4C13.3137 4 16 6.68629 16 10C16 13.3137 13.3137 16 10 16M4 10L2 8M4 10L6 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>

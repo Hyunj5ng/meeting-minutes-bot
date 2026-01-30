@@ -18,14 +18,10 @@ const fileSize = document.getElementById('fileSize');
 const removeFileBtn = document.getElementById('removeFile');
 const convertBtn = document.getElementById('convertBtn');
 const progressSection = document.getElementById('progressSection');
-const reviewSection = document.getElementById('reviewSection');
 const summaryProgressSection = document.getElementById('summaryProgressSection');
 const resultSection = document.getElementById('resultSection');
 const downloadBtn = document.getElementById('downloadBtn');
 const resetBtn = document.getElementById('resetBtn');
-const backToReviewBtn = document.getElementById('backToReviewBtn');
-const proceedBtn = document.getElementById('proceedBtn');
-const cancelBtn = document.getElementById('cancelBtn');
 
 // 초기화
 document.addEventListener('DOMContentLoaded', () => {
@@ -42,17 +38,12 @@ function setupEventListeners() {
     fileInput.addEventListener('change', handleFileSelect);
     removeFileBtn.addEventListener('click', clearFile);
 
-    // 변환 버튼 (STT만)
+    // 변환 버튼 (STT + 요약 자동 처리)
     convertBtn.addEventListener('click', handleConvert);
-
-    // 리뷰 섹션 버튼
-    proceedBtn.addEventListener('click', handleSummarize);
-    cancelBtn.addEventListener('click', reset);
 
     // 결과 관련
     downloadBtn.addEventListener('click', downloadResult);
     resetBtn.addEventListener('click', reset);
-    backToReviewBtn.addEventListener('click', backToReview);
 
     // 탭 전환
     const tabs = document.querySelectorAll('.tab');
@@ -208,7 +199,7 @@ async function handleConvert() {
         // FormData 생성
         const formData = new FormData();
         formData.append('file', selectedFile);
-        formData.append('whisper_model', document.getElementById('whisperModel').value);
+        formData.append('whisper_model', 'base');  // 기본값 사용
         formData.append('audio_duration', audioDuration || 0);
         formData.append('file_size', selectedFile.size);
 
@@ -270,11 +261,13 @@ async function handleConvert() {
 
         // STT 완료
         updateStepProgress(2, 100, 'completed', `완료! (소요 시간: ${elapsedMessage})`);
-        updateProgress(100);
+        updateProgress(60);  // STT 완료 = 60%
 
-        // 리뷰 섹션으로 이동
+        // 잠시 대기 후 바로 요약 진행
         await new Promise(resolve => setTimeout(resolve, 500));
-        showReview(data.transcript);
+
+        // 자동으로 회의록 생성 시작
+        await handleSummarize();
 
     } catch (error) {
         console.error('Error:', error);
@@ -283,61 +276,28 @@ async function handleConvert() {
     }
 }
 
-// 리뷰 화면 표시
-function showReview(transcript) {
-    progressSection.style.display = 'none';
-    reviewSection.style.display = 'block';
-
-    // 변환된 텍스트 표시
-    document.getElementById('reviewTranscriptText').textContent = transcript;
-
-    // 파일 정보 표시
-    document.getElementById('reviewFileSize').textContent = formatFileSize(transcriptData.fileSize);
-
-    // 오디오 길이 표시
-    if (transcriptData.audioDuration && transcriptData.audioDuration > 0) {
-        const minutes = Math.floor(transcriptData.audioDuration / 60);
-        const seconds = Math.round(transcriptData.audioDuration % 60);
-        document.getElementById('reviewAudioDuration').textContent = `${minutes}분 ${seconds}초`;
-    } else {
-        document.getElementById('reviewAudioDuration').textContent = '정보 없음';
-    }
-
-    // 처리 시간 표시
-    if (transcriptData.elapsedTime) {
-        const minutes = Math.floor(transcriptData.elapsedTime / 60);
-        const seconds = transcriptData.elapsedTime % 60;
-        if (minutes > 0) {
-            document.getElementById('reviewElapsedTime').textContent = `${minutes}분 ${seconds}초`;
-        } else {
-            document.getElementById('reviewElapsedTime').textContent = `${seconds}초`;
-        }
-    } else {
-        document.getElementById('reviewElapsedTime').textContent = '-';
-    }
-
-    // 스크롤을 리뷰 섹션으로 이동
-    reviewSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-// 회의록 생성 (2단계)
+// 회의록 생성 (2단계 - STT 완료 후 자동 실행)
 async function handleSummarize() {
     if (!transcriptData) return;
 
     // UI 상태 변경
-    reviewSection.style.display = 'none';
+    progressSection.style.display = 'none';
     summaryProgressSection.style.display = 'block';
 
     // 진행 단계 초기화
     updateSummaryProgress(0);
-    updateSummaryStepProgress(10, 'active', 'GPT로 회의록 생성 중...');
+
+    // 선택된 AI 모델 가져오기
+    const gptModel = document.getElementById('gptModelUpload').value;
+    const modelName = gptModel.includes('claude') ? 'Claude' : 'GPT';
+    updateSummaryStepProgress(10, 'active', `${modelName}로 회의록 생성 중...`);
 
     try {
         // FormData 생성
         const formData = new FormData();
         formData.append('transcript_id', transcriptData.transcriptId);  // DB transcript ID 전달
-        formData.append('gpt_model', document.getElementById('gptModelReview').value);
-        formData.append('save_files', document.getElementById('saveFilesReview').checked);
+        formData.append('gpt_model', gptModel);
+        formData.append('save_files', 'true');
         formData.append('return_file', 'false');
 
         updateSummaryProgress(20);
@@ -357,7 +317,6 @@ async function handleSummarize() {
         }
 
         const data = await response.json();
-        const gptModel = document.getElementById('gptModelReview').value;
 
         resultData = {
             ...transcriptData,
@@ -599,7 +558,7 @@ async function downloadResult() {
         // FormData 생성
         const formData = new FormData();
         formData.append('transcript_id', transcriptData.transcriptId);  // DB transcript ID 전달
-        formData.append('gpt_model', document.getElementById('gptModelReview').value);
+        formData.append('gpt_model', document.getElementById('gptModelUpload').value);
         formData.append('save_files', 'true');
         formData.append('return_file', 'true');
 
@@ -641,16 +600,6 @@ async function downloadResult() {
     }
 }
 
-// 뒤로가기 (결과 화면 → 리뷰 화면)
-function backToReview() {
-    resultSection.style.display = 'none';
-    summaryProgressSection.style.display = 'none';
-    reviewSection.style.display = 'block';
-
-    // 스크롤을 리뷰 섹션으로 이동
-    reviewSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
 // 리셋
 function reset() {
     selectedFile = null;
@@ -662,7 +611,6 @@ function reset() {
 
     document.querySelector('.upload-section').style.display = 'block';
     progressSection.style.display = 'none';
-    reviewSection.style.display = 'none';
     summaryProgressSection.style.display = 'none';
     resultSection.style.display = 'none';
 
