@@ -43,7 +43,7 @@ class GPTSummarizer:
                    - Claude: claude-sonnet-4-5-20250929, claude-haiku-4-5-20251001
 
         Returns:
-            str: 정리된 회의록
+            dict: {"summary": str, "input_tokens": int, "output_tokens": int}
         """
         # Claude 모델인지 확인
         if model in CLAUDE_MODELS:
@@ -78,9 +78,15 @@ class GPTSummarizer:
         response = self.openai_client.chat.completions.create(**api_params)
 
         summary = response.choices[0].message.content
-        print("회의록 작성 완료!")
+        input_tokens = response.usage.prompt_tokens
+        output_tokens = response.usage.completion_tokens
+        print(f"회의록 작성 완료! (입력: {input_tokens} tokens, 출력: {output_tokens} tokens)")
 
-        return summary
+        return {
+            "summary": summary,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens
+        }
 
     def _summarize_with_claude(self, text, model):
         """Anthropic Claude로 요약"""
@@ -101,9 +107,15 @@ class GPTSummarizer:
         )
 
         summary = response.content[0].text
-        print("회의록 작성 완료!")
+        input_tokens = response.usage.input_tokens
+        output_tokens = response.usage.output_tokens
+        print(f"회의록 작성 완료! (입력: {input_tokens} tokens, 출력: {output_tokens} tokens)")
 
-        return summary
+        return {
+            "summary": summary,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens
+        }
 
     def _get_prompt(self, text):
         """공통 프롬프트 생성"""

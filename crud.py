@@ -15,7 +15,8 @@ def create_transcript_record(
     transcript: str,
     whisper_model: str = "base",
     audio_duration: Optional[float] = None,
-    stt_processing_time: Optional[float] = None
+    stt_processing_time: Optional[float] = None,
+    stt_cost: Optional[float] = None
 ) -> TranscriptRecord:
     """새 STT 변환 레코드 생성"""
     record = TranscriptRecord(
@@ -24,7 +25,8 @@ def create_transcript_record(
         audio_duration=audio_duration,
         transcript=transcript,
         whisper_model=whisper_model,
-        stt_processing_time=stt_processing_time
+        stt_processing_time=stt_processing_time,
+        stt_cost=stt_cost
     )
     db.add(record)
     db.commit()
@@ -79,14 +81,20 @@ def create_summary_record(
     transcript_id: int,
     summary: str,
     gpt_model: str,
-    gpt_processing_time: Optional[float] = None
+    gpt_processing_time: Optional[float] = None,
+    input_tokens: Optional[int] = None,
+    output_tokens: Optional[int] = None,
+    llm_cost: Optional[float] = None
 ) -> SummaryRecord:
     """새 GPT 요약 레코드 생성"""
     record = SummaryRecord(
         transcript_id=transcript_id,
         summary=summary,
         gpt_model=gpt_model,
-        gpt_processing_time=gpt_processing_time
+        gpt_processing_time=gpt_processing_time,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        llm_cost=llm_cost
     )
     db.add(record)
     db.commit()

@@ -149,5 +149,50 @@ def migrate_data():
         db.close()
 
 
+def add_cost_columns():
+    """비용 추적을 위한 컬럼 추가 마이그레이션"""
+    db = SessionLocal()
+
+    try:
+        print("=" * 80)
+        print("비용 추적 컬럼 추가 마이그레이션")
+        print("=" * 80)
+
+        inspector = inspect(engine)
+
+        # transcript_records 테이블에 stt_cost 컬럼 추가
+        if 'transcript_records' in inspector.get_table_names():
+            existing_columns = [col['name'] for col in inspector.get_columns('transcript_records')]
+            if 'stt_cost' not in existing_columns:
+                db.execute(text("ALTER TABLE transcript_records ADD COLUMN stt_cost FLOAT"))
+                print("  ✓ transcript_records.stt_cost 컬럼 추가")
+            else:
+                print("  - transcript_records.stt_cost 이미 존재")
+
+        # summary_records 테이블에 토큰/비용 컬럼 추가
+        if 'summary_records' in inspector.get_table_names():
+            existing_columns = [col['name'] for col in inspector.get_columns('summary_records')]
+            for col_name, col_type in [('input_tokens', 'INTEGER'), ('output_tokens', 'INTEGER'), ('llm_cost', 'FLOAT')]:
+                if col_name not in existing_columns:
+                    db.execute(text(f"ALTER TABLE summary_records ADD COLUMN {col_name} {col_type}"))
+                    print(f"  ✓ summary_records.{col_name} 컬럼 추가")
+                else:
+                    print(f"  - summary_records.{col_name} 이미 존재")
+
+        db.commit()
+        print("\n✅ 비용 추적 컬럼 추가 완료!")
+
+    except Exception as e:
+        db.rollback()
+        print(f"\n❌ 오류 발생: {str(e)}")
+        sys.exit(1)
+
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
-    migrate_data()
+    if len(sys.argv) > 1 and sys.argv[1] == "cost":
+        add_cost_columns()
+    else:
+        migrate_data()

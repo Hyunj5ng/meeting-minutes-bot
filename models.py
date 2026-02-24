@@ -27,6 +27,9 @@ class TranscriptRecord(Base):
     # 처리 시간
     stt_processing_time = Column(Float, nullable=True, comment="STT 처리 시간 (초)")
 
+    # 비용 (USD)
+    stt_cost = Column(Float, nullable=True, comment="STT API 비용 (USD)")
+
     # 타임스탬프
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="생성 시각")
 
@@ -54,6 +57,13 @@ class SummaryRecord(Base):
 
     # 처리 시간
     gpt_processing_time = Column(Float, nullable=True, comment="GPT 처리 시간 (초)")
+
+    # 토큰 사용량
+    input_tokens = Column(Integer, nullable=True, comment="입력 토큰 수")
+    output_tokens = Column(Integer, nullable=True, comment="출력 토큰 수")
+
+    # 비용 (USD)
+    llm_cost = Column(Float, nullable=True, comment="LLM API 비용 (USD)")
 
     # 타임스탬프
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="생성 시각")

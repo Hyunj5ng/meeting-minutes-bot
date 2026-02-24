@@ -20,6 +20,36 @@ from models import TranscriptRecord, SummaryRecord
 import crud
 
 
+# API 모델별 가격표 (USD per 1M tokens, Whisper는 USD per minute)
+MODEL_PRICING = {
+    "whisper-1": {"per_minute": 0.006},
+    "gpt-5.1": {"input": 1.25, "output": 10.00},
+    "gpt-5": {"input": 1.25, "output": 10.00},
+    "gpt-5-mini": {"input": 0.25, "output": 2.00},
+    "gpt-5-nano": {"input": 0.05, "output": 0.40},
+    "gpt-4.1": {"input": 2.00, "output": 8.00},
+    "claude-sonnet-4-5-20250929": {"input": 3.00, "output": 15.00},
+    "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
+}
+
+
+def calculate_stt_cost(audio_duration_seconds: float) -> float:
+    """STT 비용 계산 (USD). Whisper API는 분당 $0.006"""
+    if not audio_duration_seconds or audio_duration_seconds <= 0:
+        return 0.0
+    minutes = audio_duration_seconds / 60.0
+    return round(minutes * MODEL_PRICING["whisper-1"]["per_minute"], 6)
+
+
+def calculate_llm_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    """LLM 비용 계산 (USD). 토큰 수 × 모델별 단가"""
+    pricing = MODEL_PRICING.get(model)
+    if not pricing or "input" not in pricing:
+        return 0.0
+    cost = (input_tokens * pricing["input"] + output_tokens * pricing["output"]) / 1_000_000
+    return round(cost, 6)
+
+
 # LLM 모델 선택을 위한 Enum (GPT + Claude)
 class LLMModel(str, Enum):
     # OpenAI GPT 모델
@@ -206,6 +236,10 @@ async def transcribe_only(
         stt_time = time.time() - start_time
         print(f"변환 완료 (길이: {len(transcript)}자, 소요 시간: {stt_time:.2f}초)")
 
+        # STT 비용 계산
+        stt_cost = calculate_stt_cost(audio_duration)
+        print(f"STT 비용: ${stt_cost:.6f}")
+
         # DB에 저장 (TranscriptRecord 생성)
         transcript_record = crud.create_transcript_record(
             db=db,
@@ -214,7 +248,8 @@ async def transcribe_only(
             transcript=transcript,
             whisper_model=whisper_model.value,
             audio_duration=audio_duration,
-            stt_processing_time=stt_time
+            stt_processing_time=stt_time,
+            stt_cost=stt_cost
         )
         print(f"DB 저장 완료 (Transcript ID: {transcript_record.id})")
 
@@ -271,9 +306,14 @@ async def summarize_transcript(
         # GPT 요약 - 시간 측정
         print(f"GPT ({gpt_model.value})로 회의록 작성 중...")
         start_time = time.time()
-        summary = gpt_summarizer.summarize(transcript, model=gpt_model.value)
+        result = gpt_summarizer.summarize(transcript, model=gpt_model.value)
         gpt_time = time.time() - start_time
-        print(f"회의록 작성 완료! (소요 시간: {gpt_time:.2f}초)")
+
+        summary = result["summary"]
+        input_tokens = result["input_tokens"]
+        output_tokens = result["output_tokens"]
+        llm_cost = calculate_llm_cost(gpt_model.value, input_tokens, output_tokens)
+        print(f"회의록 작성 완료! (소요 시간: {gpt_time:.2f}초, 비용: ${llm_cost:.6f})")
 
         # DB에 새 SummaryRecord 생성 (업데이트가 아닌 생성)
         summary_record = crud.create_summary_record(
@@ -281,7 +321,10 @@ async def summarize_transcript(
             transcript_id=transcript_id,
             summary=summary,
             gpt_model=gpt_model.value,
-            gpt_processing_time=gpt_time
+            gpt_processing_time=gpt_time,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            llm_cost=llm_cost
         )
         print(f"DB 저장 완료 (Summary ID: {summary_record.id}, Transcript ID: {transcript_id})")
 
@@ -401,7 +444,8 @@ async def transcribe_audio(
 
         # 2단계: GPT 요약
         print(f"GPT ({gpt_model.value})로 회의록 작성 중...")
-        summary = gpt_summarizer.summarize(transcript, model=gpt_model.value)
+        result = gpt_summarizer.summarize(transcript, model=gpt_model.value)
+        summary = result["summary"]
         print("회의록 작성 완료!")
 
         # 3단계: 파일 저장 또는 응답 준비
