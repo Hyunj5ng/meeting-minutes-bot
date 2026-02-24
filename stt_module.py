@@ -1,8 +1,8 @@
 import os
-import subprocess
+import asyncio
 import tempfile
 from dotenv import load_dotenv
-from groq import Groq
+from groq import AsyncGroq
 
 
 # Groq Whisper API 파일 크기 제한 (25MB)
@@ -14,17 +14,17 @@ CHUNK_DURATION_SEC = 600
 class STTProcessor:
     def __init__(self, model_size: str = "base"):
         """
-        Groq Whisper API를 사용한 STT 처리기.
+        Groq Whisper API를 사용한 STT 처리기 (비동기).
 
         Args:
             model_size: 사용하지 않음 (API는 단일 모델 사용). 호환성을 위해 유지.
         """
         load_dotenv()
-        self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
         self.model_size = model_size
         print("Groq Whisper API 클라이언트 초기화 완료!")
 
-    def transcribe(self, audio_file_path):
+    async def transcribe(self, audio_file_path):
         """
         음성 파일을 텍스트로 변환합니다.
         25MB 초과 시 자동으로 분할하여 처리합니다.
@@ -43,18 +43,18 @@ class STTProcessor:
 
         if file_size <= MAX_FILE_SIZE:
             # 파일 크기가 제한 이하면 그대로 처리
-            return self._transcribe_single(audio_file_path)
+            return await self._transcribe_single(audio_file_path)
         else:
             # 파일 크기가 제한 초과면 분할 처리
             print(f"파일이 24MB를 초과하여 분할 처리합니다...")
-            return self._transcribe_chunked(audio_file_path)
+            return await self._transcribe_chunked(audio_file_path)
 
-    def _transcribe_single(self, audio_file_path):
+    async def _transcribe_single(self, audio_file_path):
         """단일 파일 변환"""
         print(f"음성 파일 변환 중 (Groq Whisper API): {audio_file_path}")
 
         with open(audio_file_path, "rb") as audio_file:
-            transcript = self.client.audio.transcriptions.create(
+            transcript = await self.client.audio.transcriptions.create(
                 model="whisper-large-v3-turbo",
                 file=audio_file,
                 language="ko"
@@ -62,29 +62,28 @@ class STTProcessor:
 
         return transcript.text
 
-    def _get_audio_duration(self, audio_file_path):
-        """ffprobe로 오디오 길이 확인 (메모리 사용 없음)"""
+    async def _get_audio_duration(self, audio_file_path):
+        """ffprobe로 오디오 길이 확인 (비동기)"""
         try:
-            result = subprocess.run(
-                [
-                    "ffprobe", "-v", "error",
-                    "-show_entries", "format=duration",
-                    "-of", "default=noprint_wrappers=1:nokey=1",
-                    audio_file_path
-                ],
-                capture_output=True,
-                text=True
+            proc = await asyncio.create_subprocess_exec(
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                audio_file_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
             )
-            return float(result.stdout.strip())
+            stdout, _ = await proc.communicate()
+            return float(stdout.decode().strip())
         except Exception as e:
             print(f"오디오 길이 확인 실패: {e}")
             return None
 
-    def _transcribe_chunked(self, audio_file_path):
-        """ffmpeg로 스트리밍 분할하여 변환 (메모리 효율적)"""
+    async def _transcribe_chunked(self, audio_file_path):
+        """ffmpeg로 스트리밍 분할하여 변환 (비동기)"""
 
         # 오디오 길이 확인
-        duration = self._get_audio_duration(audio_file_path)
+        duration = await self._get_audio_duration(audio_file_path)
         if duration:
             print(f"총 오디오 길이: {duration/60:.1f}분")
             num_chunks = int(duration // CHUNK_DURATION_SEC) + 1
@@ -94,24 +93,24 @@ class STTProcessor:
         chunk_num = 0
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            # ffmpeg로 10분 단위로 분할 (메모리 사용 최소화)
+            # ffmpeg로 10분 단위로 분할 (비동기)
             output_pattern = os.path.join(temp_dir, "chunk_%03d.mp3")
 
             print("ffmpeg로 오디오 분할 중...")
-            subprocess.run(
-                [
-                    "ffmpeg", "-i", audio_file_path,
-                    "-f", "segment",
-                    "-segment_time", str(CHUNK_DURATION_SEC),
-                    "-c:a", "libmp3lame",
-                    "-b:a", "64k",  # 낮은 비트레이트로 파일 크기 줄임
-                    "-ac", "1",     # 모노로 변환 (파일 크기 절반)
-                    "-ar", "16000", # 16kHz 샘플레이트 (음성에 충분)
-                    "-y",
-                    output_pattern
-                ],
-                capture_output=True
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg", "-i", audio_file_path,
+                "-f", "segment",
+                "-segment_time", str(CHUNK_DURATION_SEC),
+                "-c:a", "libmp3lame",
+                "-b:a", "64k",  # 낮은 비트레이트로 파일 크기 줄임
+                "-ac", "1",     # 모노로 변환 (파일 크기 절반)
+                "-ar", "16000", # 16kHz 샘플레이트 (음성에 충분)
+                "-y",
+                output_pattern,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
             )
+            await proc.communicate()
 
             # 생성된 청크 파일들 처리
             chunk_files = sorted([
@@ -129,9 +128,9 @@ class STTProcessor:
 
                 print(f"청크 {chunk_num}/{total_chunks} 처리 중... ({chunk_size / (1024*1024):.2f}MB)")
 
-                # Groq Whisper API 호출
+                # Groq Whisper API 호출 (비동기)
                 with open(chunk_path, "rb") as audio_file:
-                    transcript = self.client.audio.transcriptions.create(
+                    transcript = await self.client.audio.transcriptions.create(
                         model="whisper-large-v3-turbo",
                         file=audio_file,
                         language="ko"

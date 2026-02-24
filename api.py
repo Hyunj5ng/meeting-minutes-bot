@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from enum import Enum
 from sqlalchemy.orm import Session
 import os
-import shutil
+import aiofiles
 from datetime import datetime
 from stt_module import STTProcessor
 from gpt_summarizer import GPTSummarizer
@@ -223,16 +223,17 @@ async def transcribe_only(
     temp_file_path = os.path.join(UPLOAD_DIR, temp_filename)
 
     try:
-        # 업로드된 파일 저장
-        with open(temp_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # 업로드된 파일 저장 (비동기)
+        content = await file.read()
+        async with aiofiles.open(temp_file_path, "wb") as buffer:
+            await buffer.write(content)
 
         print(f"파일 업로드 완료: {temp_file_path}")
 
         # STT (음성 -> 텍스트) - 시간 측정
         print("음성을 텍스트로 변환 중...")
         start_time = time.time()
-        transcript = stt_processor.transcribe(temp_file_path)
+        transcript = await stt_processor.transcribe(temp_file_path)
         stt_time = time.time() - start_time
         print(f"변환 완료 (길이: {len(transcript)}자, 소요 시간: {stt_time:.2f}초)")
 
@@ -306,7 +307,7 @@ async def summarize_transcript(
         # GPT 요약 - 시간 측정
         print(f"GPT ({gpt_model.value})로 회의록 작성 중...")
         start_time = time.time()
-        result = gpt_summarizer.summarize(transcript, model=gpt_model.value)
+        result = await gpt_summarizer.summarize(transcript, model=gpt_model.value)
         gpt_time = time.time() - start_time
 
         summary = result["summary"]
@@ -334,8 +335,8 @@ async def summarize_transcript(
 
         # 회의록 파일 생성 (return_file이 True이거나 save_files가 True인 경우)
         if return_file or save_files:
-            with open(summary_path, "w", encoding="utf-8") as f:
-                f.write(summary)
+            async with aiofiles.open(summary_path, "w", encoding="utf-8") as f:
+                await f.write(summary)
             print(f"회의록 파일 생성: {summary_path}")
             summary_url = upload_file_to_s3(
                 summary_path,
@@ -346,8 +347,8 @@ async def summarize_transcript(
         # 원본 텍스트 파일 저장 (save_files가 True인 경우에만)
         if save_files:
             transcript_path = os.path.join(OUTPUT_DIR, f"transcript_{timestamp}_{unique_id}.txt")
-            with open(transcript_path, "w", encoding="utf-8") as f:
-                f.write(transcript)
+            async with aiofiles.open(transcript_path, "w", encoding="utf-8") as f:
+                await f.write(transcript)
             print(f"원본 텍스트 파일 저장: {transcript_path}")
             transcript_url = upload_file_to_s3(
                 transcript_path,
@@ -431,20 +432,21 @@ async def transcribe_audio(
     temp_file_path = os.path.join(UPLOAD_DIR, temp_filename)
 
     try:
-        # 업로드된 파일 저장
-        with open(temp_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # 업로드된 파일 저장 (비동기)
+        content = await file.read()
+        async with aiofiles.open(temp_file_path, "wb") as buffer:
+            await buffer.write(content)
 
         print(f"파일 업로드 완료: {temp_file_path}")
 
         # 1단계: STT (음성 -> 텍스트)
         print("음성을 텍스트로 변환 중...")
-        transcript = stt_processor.transcribe(temp_file_path)
+        transcript = await stt_processor.transcribe(temp_file_path)
         print(f"변환 완료 (길이: {len(transcript)}자)")
 
         # 2단계: GPT 요약
         print(f"GPT ({gpt_model.value})로 회의록 작성 중...")
-        result = gpt_summarizer.summarize(transcript, model=gpt_model.value)
+        result = await gpt_summarizer.summarize(transcript, model=gpt_model.value)
         summary = result["summary"]
         print("회의록 작성 완료!")
 
@@ -454,8 +456,8 @@ async def transcribe_audio(
 
         # 회의록 파일 생성 (return_file이 True이거나 save_files가 True인 경우)
         if return_file or save_files:
-            with open(summary_path, "w", encoding="utf-8") as f:
-                f.write(summary)
+            async with aiofiles.open(summary_path, "w", encoding="utf-8") as f:
+                await f.write(summary)
             print(f"회의록 파일 생성: {summary_path}")
             summary_url = upload_file_to_s3(
                 summary_path,
@@ -466,8 +468,8 @@ async def transcribe_audio(
         # 원본 텍스트 파일 저장 (save_files가 True인 경우에만)
         if save_files:
             transcript_path = os.path.join(OUTPUT_DIR, f"transcript_{timestamp}_{unique_id}.txt")
-            with open(transcript_path, "w", encoding="utf-8") as f:
-                f.write(transcript)
+            async with aiofiles.open(transcript_path, "w", encoding="utf-8") as f:
+                await f.write(transcript)
             print(f"원본 텍스트 파일 저장: {transcript_path}")
             transcript_url = upload_file_to_s3(
                 transcript_path,

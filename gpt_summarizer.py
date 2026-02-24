@@ -1,4 +1,4 @@
-from openai import OpenAI
+from openai import AsyncOpenAI
 import anthropic
 import os
 from dotenv import load_dotenv
@@ -11,48 +11,46 @@ CLAUDE_MODELS = ["claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001"]
 class GPTSummarizer:
     def __init__(self):
         """
-        OpenAI GPT API와 Anthropic Claude API를 초기화합니다.
+        OpenAI GPT API와 Anthropic Claude API를 초기화합니다 (비동기).
         .env 파일에서 API 키를 불러옵니다.
         """
         load_dotenv()
 
-        # OpenAI 클라이언트
+        # OpenAI 클라이언트 (비동기)
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if openai_api_key:
-            self.openai_client = OpenAI(api_key=openai_api_key)
+            self.openai_client = AsyncOpenAI(api_key=openai_api_key)
         else:
             self.openai_client = None
             print("경고: OPENAI_API_KEY가 설정되지 않았습니다.")
 
-        # Anthropic 클라이언트
+        # Anthropic 클라이언트 (비동기)
         anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
         if anthropic_api_key:
-            self.anthropic_client = anthropic.Anthropic(api_key=anthropic_api_key)
+            self.anthropic_client = anthropic.AsyncAnthropic(api_key=anthropic_api_key)
         else:
             self.anthropic_client = None
             print("경고: ANTHROPIC_API_KEY가 설정되지 않았습니다.")
 
-    def summarize(self, text, model="gpt-5-mini"):
+    async def summarize(self, text, model="gpt-5-mini"):
         """
         회의 내용을 LLM을 사용하여 정리된 회의록으로 변환합니다.
 
         Args:
             text: STT로 변환된 원본 텍스트
             model: 사용할 모델
-                   - OpenAI: gpt-5.1, gpt-5, gpt-5-mini, gpt-5-nano, gpt-4.1
-                   - Claude: claude-sonnet-4-5-20250929, claude-haiku-4-5-20251001
 
         Returns:
             dict: {"summary": str, "input_tokens": int, "output_tokens": int}
         """
         # Claude 모델인지 확인
         if model in CLAUDE_MODELS:
-            return self._summarize_with_claude(text, model)
+            return await self._summarize_with_claude(text, model)
         else:
-            return self._summarize_with_openai(text, model)
+            return await self._summarize_with_openai(text, model)
 
-    def _summarize_with_openai(self, text, model):
-        """OpenAI GPT로 요약"""
+    async def _summarize_with_openai(self, text, model):
+        """OpenAI GPT로 요약 (비동기)"""
         if not self.openai_client:
             raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다.")
 
@@ -75,7 +73,7 @@ class GPTSummarizer:
         if not model.startswith("gpt-5"):
             api_params["temperature"] = 0.3
 
-        response = self.openai_client.chat.completions.create(**api_params)
+        response = await self.openai_client.chat.completions.create(**api_params)
 
         summary = response.choices[0].message.content
         input_tokens = response.usage.prompt_tokens
@@ -88,8 +86,8 @@ class GPTSummarizer:
             "output_tokens": output_tokens
         }
 
-    def _summarize_with_claude(self, text, model):
-        """Anthropic Claude로 요약"""
+    async def _summarize_with_claude(self, text, model):
+        """Anthropic Claude로 요약 (비동기)"""
         if not self.anthropic_client:
             raise ValueError("ANTHROPIC_API_KEY가 설정되지 않았습니다.")
 
@@ -97,7 +95,7 @@ class GPTSummarizer:
 
         prompt = self._get_prompt(text)
 
-        response = self.anthropic_client.messages.create(
+        response = await self.anthropic_client.messages.create(
             model=model,
             max_tokens=4096,
             system="당신은 전문적인 회의록 작성 비서입니다. 회의 내용을 명확하고 체계적으로 정리합니다.",
