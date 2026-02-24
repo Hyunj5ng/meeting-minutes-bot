@@ -1,5 +1,6 @@
 openai
 anthropic
+groq
 python-dotenv
 fastapi
 uvicorn[standard]

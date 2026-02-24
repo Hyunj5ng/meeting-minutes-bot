@@ -2,10 +2,10 @@ import os
 import subprocess
 import tempfile
 from dotenv import load_dotenv
-from openai import OpenAI
+from groq import Groq
 
 
-# OpenAI Whisper API 파일 크기 제한 (25MB)
+# Groq Whisper API 파일 크기 제한 (25MB)
 MAX_FILE_SIZE = 24 * 1024 * 1024  # 24MB로 여유있게 설정
 # 분할 시 청크 길이 (10분 = 600초)
 CHUNK_DURATION_SEC = 600
@@ -14,15 +14,15 @@ CHUNK_DURATION_SEC = 600
 class STTProcessor:
     def __init__(self, model_size: str = "base"):
         """
-        OpenAI Whisper API를 사용한 STT 처리기.
+        Groq Whisper API를 사용한 STT 처리기.
 
         Args:
             model_size: 사용하지 않음 (API는 단일 모델 사용). 호환성을 위해 유지.
         """
         load_dotenv()
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
         self.model_size = model_size
-        print("OpenAI Whisper API 클라이언트 초기화 완료!")
+        print("Groq Whisper API 클라이언트 초기화 완료!")
 
     def transcribe(self, audio_file_path):
         """
@@ -51,11 +51,11 @@ class STTProcessor:
 
     def _transcribe_single(self, audio_file_path):
         """단일 파일 변환"""
-        print(f"음성 파일 변환 중 (OpenAI Whisper API): {audio_file_path}")
+        print(f"음성 파일 변환 중 (Groq Whisper API): {audio_file_path}")
 
         with open(audio_file_path, "rb") as audio_file:
             transcript = self.client.audio.transcriptions.create(
-                model="whisper-1",
+                model="whisper-large-v3-turbo",
                 file=audio_file,
                 language="ko"
             )
@@ -129,10 +129,10 @@ class STTProcessor:
 
                 print(f"청크 {chunk_num}/{total_chunks} 처리 중... ({chunk_size / (1024*1024):.2f}MB)")
 
-                # Whisper API 호출
+                # Groq Whisper API 호출
                 with open(chunk_path, "rb") as audio_file:
                     transcript = self.client.audio.transcriptions.create(
-                        model="whisper-1",
+                        model="whisper-large-v3-turbo",
                         file=audio_file,
                         language="ko"
                     )

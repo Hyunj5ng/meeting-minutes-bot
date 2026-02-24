@@ -22,7 +22,7 @@ import crud
 
 # API 모델별 가격표 (USD per 1M tokens, Whisper는 USD per minute)
 MODEL_PRICING = {
-    "whisper-1": {"per_minute": 0.006},
+    "whisper-large-v3-turbo": {"per_minute": 0.000667},
     "gpt-5.1": {"input": 1.25, "output": 10.00},
     "gpt-5": {"input": 1.25, "output": 10.00},
     "gpt-5-mini": {"input": 0.25, "output": 2.00},
@@ -34,11 +34,11 @@ MODEL_PRICING = {
 
 
 def calculate_stt_cost(audio_duration_seconds: float) -> float:
-    """STT 비용 계산 (USD). Whisper API는 분당 $0.006"""
+    """STT 비용 계산 (USD). Groq Whisper는 분당 $0.000667"""
     if not audio_duration_seconds or audio_duration_seconds <= 0:
         return 0.0
     minutes = audio_duration_seconds / 60.0
-    return round(minutes * MODEL_PRICING["whisper-1"]["per_minute"], 6)
+    return round(minutes * MODEL_PRICING["whisper-large-v3-turbo"]["per_minute"], 6)
 
 
 def calculate_llm_cost(model: str, input_tokens: int, output_tokens: int) -> float:
