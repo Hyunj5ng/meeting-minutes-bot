@@ -1,13 +1,46 @@
 # 회의록봇 (Meeting Minutes Bot)
 
-음성 파일을 자동으로 텍스트로 변환하고, GPT를 사용하여 체계적인 회의록으로 정리해주는 프로그램입니다.
+음성 파일을 자동으로 텍스트로 변환하고, LLM을 사용하여 체계적인 회의록으로 정리해주는 웹 애플리케이션입니다.
 
 ## 주요 기능
 
-- **STT (Speech-to-Text)**: OpenAI Whisper API로 음성을 텍스트로 변환 (로컬 모델 없이 바로 사용)
-- **회의록 생성**: GPT API를 사용하여 변환된 텍스트를 구조화된 회의록으로 정리
-- **자동 저장**: 원본 텍스트와 정리된 회의록을 자동으로 파일로 저장
-- **REST API**: FastAPI 기반 웹 API 제공 (웹 클라이언트와 연동 가능)
+- **STT (Speech-to-Text)**: Groq Whisper Large v3 Turbo API로 음성을 텍스트로 변환 (빠르고 저렴한 클라우드 STT)
+- **회의록 생성**: OpenAI GPT 또는 Anthropic Claude를 선택하여 구조화된 회의록 작성
+- **비용 추적**: 매 요청마다 STT/LLM 비용을 자동 계산하여 DB에 기록
+- **동시 처리**: 비동기 아키텍처 + 멀티 워커로 최대 50명 동시 사용 지원
+- **대용량 파일**: 25MB 초과 오디오 파일 자동 분할 처리
+- **웹 프론트엔드**: 내장 웹 UI로 브라우저에서 바로 사용
+- **REST API**: FastAPI 기반 웹 API 제공 (외부 연동 가능)
+- **DB 저장**: PostgreSQL(또는 SQLite)에 변환 이력 및 비용 자동 저장
+
+## 기술 스택
+
+| 구분 | 기술 |
+|------|------|
+| STT | Groq Whisper Large v3 Turbo (`$0.000667/분`) |
+| LLM | OpenAI GPT (5-mini, 5, 5.1, 4.1) / Anthropic Claude (Sonnet 4.5, Haiku 4.5) |
+| 백엔드 | FastAPI + uvicorn (4 workers) |
+| DB | PostgreSQL (프로덕션) / SQLite (로컬 개발) |
+| 비동기 | AsyncGroq, AsyncOpenAI, AsyncAnthropic, aiofiles |
+| 오디오 처리 | ffmpeg (분할/인코딩) |
+| 파일 스토리지 | S3/R2 호환 (선택) |
+| 배포 | Docker + Railway |
+
+## 아키텍처
+
+```
+브라우저    ┌─ 워커1 ─┐
+(50명)  ──▶│ 워커2  │──await(비동기)──▶ Groq Whisper / OpenAI / Claude API
+           │ 워커3  │
+           └─ 워커4 ─┘
+                │
+                ▼
+           PostgreSQL (커넥션 풀 50개)
+```
+
+- 4개의 uvicorn 워커가 요청을 분산 처리
+- 비동기 API 호출로 한 요청이 다른 요청을 차단하지 않음
+- DB 커넥션 풀 (pool_size=20, max_overflow=30)로 동시 50개 연결 지원
 
 ## 설치 방법
 
@@ -21,6 +54,7 @@ python --version
 ### 2. 프로젝트 클론 및 이동
 
 ```bash
+git clone https://github.com/YOUR_USERNAME/meeting-minutes-bot.git
 cd meeting-minutes-bot
 ```
 
@@ -30,11 +64,9 @@ cd meeting-minutes-bot
 pip install -r requirements.txt
 ```
 
-### 4. OpenAI API 키 설정
+### 4. API 키 설정
 
-1. [OpenAI 웹사이트](https://platform.openai.com/)에서 API 키 발급
-2. `.env.example` 파일을 `.env`로 복사
-3. `.env` 파일을 열어서 API 키 입력
+`.env.example` 파일을 `.env`로 복사하고 API 키를 입력합니다.
 
 ```bash
 cp .env.example .env
@@ -42,30 +74,40 @@ cp .env.example .env
 
 `.env` 파일 내용:
 ```
-OPENAI_API_KEY=sk-your-actual-api-key-here
-# 선택: 외부 DB 연결 (예: Vercel Postgres / Railway / Supabase)
-# DATABASE_URL=postgresql://...
+# 필수
+GROQ_API_KEY=your_groq_api_key_here
 
-# 선택: S3 또는 호환 스토리지(R2 등) 업로드 설정
+# LLM (사용할 모델에 따라 하나 이상 설정)
+OPENAI_API_KEY=your_openai_api_key_here
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
+# 선택: 외부 DB 연결 (없으면 SQLite 사용)
+# DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DBNAME
+
+# 선택: S3 또는 호환 스토리지(R2 등)
 # S3_BUCKET_NAME=your-bucket
 # S3_REGION=ap-northeast-2
-# S3_ENDPOINT_URL=https://<custom-endpoint>   # 옵션
+# S3_ENDPOINT_URL=https://<custom-endpoint>
 # AWS_ACCESS_KEY_ID=...
 # AWS_SECRET_ACCESS_KEY=...
 ```
+
+API 키 발급처:
+- Groq: https://console.groq.com/
+- OpenAI: https://platform.openai.com/
+- Anthropic: https://console.anthropic.com/
 
 ## 빠른 시작 (로컬 실행)
 
 ### 1. 가상환경 생성 및 활성화 (권장)
 
 ```bash
-# 가상환경 생성
 python -m venv venv
 
-# 가상환경 활성화 (macOS/Linux)
+# macOS/Linux
 source venv/bin/activate
 
-# 가상환경 활성화 (Windows)
+# Windows
 venv\Scripts\activate
 ```
 
@@ -78,11 +120,8 @@ pip install -r requirements.txt
 ### 3. 환경 변수 설정
 
 ```bash
-# .env 파일 생성
 cp .env.example .env
-
-# .env 파일을 열어서 OpenAI API 키 입력
-# OPENAI_API_KEY=sk-your-actual-api-key-here
+# .env 파일을 열어서 API 키 입력
 ```
 
 ### 4. API 서버 실행
@@ -91,224 +130,218 @@ cp .env.example .env
 python api.py
 ```
 
-서버가 시작되면 브라우저에서 http://localhost:8000/docs 를 열어 테스트할 수 있습니다.
-
-### 5. 서버 종료
-
-터미널에서 `Ctrl+C`를 누르면 서버가 종료됩니다.
+서버가 시작되면 브라우저에서 다음 주소로 접속합니다:
+- 웹 UI: http://localhost:8000/app
+- API 문서: http://localhost:8000/docs
 
 ---
 
 ## 사용 방법
 
-### 방법 1: API 서버 실행 (권장)
+### 방법 1: 웹 UI (권장)
 
-웹 인터페이스나 다른 애플리케이션과 연동하려면 API 서버를 실행하세요.
+서버 실행 후 http://localhost:8000/app 에서 바로 사용할 수 있습니다.
+
+1. 음성 파일 업로드 (mp3, wav, m4a, ogg, flac, aac)
+2. LLM 모델 선택 (GPT-5-mini, Claude Sonnet 등)
+3. 회의록 자동 생성 및 다운로드
+
+### 방법 2: API 직접 호출
+
+#### 1단계: STT (음성 → 텍스트)
+
+**POST /transcribe-only**
 
 ```bash
-python api.py
+curl -X POST "http://localhost:8000/transcribe-only" \
+  -F "file=@meeting.mp3" \
+  -F "audio_duration=300" \
+  -F "file_size=5000000"
 ```
 
-또는
+응답:
+```json
+{
+  "success": true,
+  "transcript_id": 1,
+  "filename": "meeting.mp3",
+  "transcript": "변환된 텍스트...",
+  "timestamp": "20250128_143022"
+}
+```
+
+#### 2단계: 요약 (텍스트 → 회의록)
+
+**POST /summarize**
 
 ```bash
-uvicorn api:app --reload --host 0.0.0.0 --port 8000
+curl -X POST "http://localhost:8000/summarize" \
+  -F "transcript_id=1" \
+  -F "gpt_model=gpt-5-mini"
 ```
 
-서버가 실행되면 다음 주소에서 API 문서를 확인할 수 있습니다:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+응답:
+```json
+{
+  "success": true,
+  "summary_id": 1,
+  "transcript_id": 1,
+  "summary": "정리된 회의록...",
+  "timestamp": "20250128_143045"
+}
+```
 
-#### API 엔드포인트
+#### 한번에 처리 (레거시)
 
-**POST /transcribe** - 음성 파일을 회의록으로 변환
+**POST /transcribe** - STT + 요약을 한번에 수행
 
 ```bash
 curl -X POST "http://localhost:8000/transcribe" \
   -F "file=@meeting.mp3" \
+  -F "gpt_model=gpt-5-mini" \
   -F "save_files=true"
 ```
 
-**응답 예시:**
-```json
-{
-  "success": true,
-  "filename": "meeting.mp3",
-  "transcript": "회의 내용 원본 텍스트...",
-  "summary": "정리된 회의록...",
-  "timestamp": "20250128_143022",
-  "saved_files": {
-    "transcript": "output/transcript_20250128_143022_a1b2c3d4.txt",
-    "summary": "output/meeting_minutes_20250128_143022_a1b2c3d4.txt"
-  }
-}
-```
+#### 기타 엔드포인트
 
-**GET /health** - 서버 상태 확인
+| 엔드포인트 | 설명 |
+|------------|------|
+| `GET /health` | 서버 상태 확인 |
+| `GET /transcripts` | STT 레코드 목록 조회 |
+| `GET /transcripts/{id}` | 특정 STT 레코드 조회 |
+| `GET /transcripts/{id}/summaries` | 특정 STT의 요약 목록 |
+| `GET /summaries` | 요약 레코드 목록 조회 |
+| `GET /search/transcripts?keyword=` | STT 레코드 검색 |
+| `GET /search/summaries?keyword=` | 요약 레코드 검색 |
+| `DELETE /cleanup?days=7` | 오래된 파일 정리 |
 
-```bash
-curl http://localhost:8000/health
-```
-
-**DELETE /cleanup?days=7** - 오래된 파일 정리
-
-```bash
-curl -X DELETE "http://localhost:8000/cleanup?days=7"
-```
-
-### 방법 2: CLI 사용 (기존 방식)
-
-커맨드라인에서 직접 실행하려면:
+### 방법 3: CLI 사용
 
 ```bash
 python main.py <음성파일경로>
 ```
 
-예시:
-```bash
-python main.py meeting.mp3
-```
-
 ### 지원하는 음성 파일 형식
 
-- MP3
-- WAV
-- M4A
-- OGG
-- FLAC
-- AAC
+MP3, WAV, M4A, OGG, FLAC, AAC
 
-## 출력 결과
+## 사용 가능한 LLM 모델
 
-프로그램 실행 후 `output/` 폴더에 다음 파일들이 생성됩니다:
+| 모델 | 특징 | 입력 비용 (1M 토큰) | 출력 비용 (1M 토큰) |
+|------|------|---------------------|---------------------|
+| `gpt-5-mini` | 빠르고 비용 효율적 (기본값) | $0.25 | $2.00 |
+| `gpt-5-nano` | 최저 비용, 짧은 회의용 | $0.05 | $0.40 |
+| `gpt-5` | 고품질 추론 | $1.25 | $10.00 |
+| `gpt-5.1` | 최신 추론형 | $1.25 | $10.00 |
+| `gpt-4.1` | 일반형, 가벼운 요약용 | $2.00 | $8.00 |
+| `claude-sonnet-4-5` | 고품질, 빠른 속도 | $3.00 | $15.00 |
+| `claude-haiku-4-5` | 가장 빠르고 경제적 | $1.00 | $5.00 |
 
-1. `transcript_YYYYMMDD_HHMMSS.txt`: STT로 변환된 원본 텍스트
-2. `meeting_minutes_YYYYMMDD_HHMMSS.txt`: GPT로 정리된 회의록
+## 비용 추적
 
-회의록은 다음 형식으로 작성됩니다:
-- 회의 주제
-- 주요 논의 사항
-- 결정 사항
-- 액션 아이템
-- 기타 사항
+모든 API 호출 비용이 DB에 자동 기록됩니다.
+
+- **STT 비용**: Groq Whisper `$0.000667/분` (오디오 길이 기준)
+- **LLM 비용**: 모델별 토큰 단가 × 사용 토큰 수
+
+### 비용 확인 스크립트
+
+```bash
+DATABASE_URL="postgresql://..." python check_costs.py
+```
+
+출력 예시:
+```
+===== 비용 요약 =====
+총 레코드: 15건
+STT 비용 합계: $0.045
+LLM 비용 합계: $0.032
+총 비용: $0.077
+건당 평균: $0.005
+```
 
 ## 컨테이너 배포 (Railway/Render/Fly/Cloud Run 등)
 
-1) 환경 변수 설정 (필수)
-- `OPENAI_API_KEY`: OpenAI 키
-- `DATABASE_URL`: 외부 Postgres URL (예: Railway/Render/Supabase)
-- 선택: `S3_BUCKET_NAME`, `S3_REGION`, `S3_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (파일을 S3/R2 등에 업로드하려면 설정)
+### 환경 변수 설정 (필수)
 
-2) 이미지 빌드
+| 변수 | 설명 | 필수 |
+|------|------|------|
+| `GROQ_API_KEY` | Groq API 키 (STT) | O |
+| `OPENAI_API_KEY` | OpenAI API 키 (GPT 모델 사용 시) | 선택 |
+| `ANTHROPIC_API_KEY` | Anthropic API 키 (Claude 모델 사용 시) | 선택 |
+| `DATABASE_URL` | PostgreSQL URL | O (프로덕션) |
+| `S3_BUCKET_NAME` | S3/R2 버킷명 | 선택 |
+
+### Docker 빌드 및 실행
+
 ```bash
+# 이미지 빌드
 docker build -t meeting-minutes-bot .
-```
 
-3) 컨테이너 실행 (로컬 확인)
-```bash
+# 컨테이너 실행 (로컬 확인)
 docker run -p 8000:8000 \
+  -e GROQ_API_KEY=$GROQ_API_KEY \
   -e OPENAI_API_KEY=$OPENAI_API_KEY \
   -e DATABASE_URL=$DATABASE_URL \
   meeting-minutes-bot
 ```
-이후 http://localhost:8000/docs 로 접속해 확인합니다.
 
-4) 호스팅 서비스에 올리기
-- Dockerfile 기반 배포를 지원하는 서비스(Railway/Render/Fly/Cloud Run)에 위 환경 변수를 설정하고 빌드/배포하면 됩니다.
+이후 http://localhost:8000/app 으로 접속해 확인합니다.
+
+### 호스팅 배포
+
+Dockerfile 기반 배포를 지원하는 서비스(Railway/Render/Fly/Cloud Run)에 환경 변수를 설정하고 빌드/배포합니다.
+프로덕션 환경에서는 4개의 uvicorn 워커가 자동으로 실행됩니다.
 
 ## 프로젝트 구조
 
 ```
 meeting-minutes-bot/
+├── api.py                  # FastAPI 웹 서버 (엔드포인트, 비용 계산)
+├── stt_module.py           # Groq Whisper STT 처리 (비동기)
+├── gpt_summarizer.py       # LLM 요약 모듈 (OpenAI/Claude, 비동기)
+├── database.py             # DB 연결 설정 (커넥션 풀)
+├── models.py               # SQLAlchemy 데이터 모델
+├── crud.py                 # DB CRUD 함수
+├── migrate_db.py           # DB 마이그레이션 스크립트
+├── check_costs.py          # 비용 확인 스크립트
 ├── main.py                 # CLI 실행 스크립트
-├── api.py                  # FastAPI 웹 서버
-├── stt_module.py          # Whisper STT 처리 모듈
-├── gpt_summarizer.py      # GPT 요약 모듈
-├── requirements.txt       # 필요한 패키지 목록
-├── .env.example          # 환경변수 예시 파일
-├── .gitignore            # Git 제외 파일 목록
-├── Dockerfile            # 컨테이너 빌드 설정
-├── .dockerignore         # 도커 컨텍스트 제외 목록
-├── README.md             # 프로젝트 설명서
-├── uploads/              # 업로드 임시 파일 폴더 (자동 생성)
-└── output/               # 결과 파일 저장 폴더 (자동 생성)
+├── init_db.py              # DB 초기화 스크립트
+├── requirements.txt        # Python 패키지 목록
+├── Dockerfile              # 컨테이너 빌드 설정
+├── .dockerignore           # 도커 컨텍스트 제외 목록
+├── .env.example            # 환경변수 예시 파일
+├── frontend/               # 웹 프론트엔드
+│   ├── index.html          # 메인 페이지
+│   ├── css/style.css       # 스타일시트
+│   └── js/app.js           # 클라이언트 JavaScript
+├── uploads/                # 업로드 임시 파일 (자동 생성)
+└── output/                 # 결과 파일 저장 (자동 생성)
 ```
 
 ## 주의사항
 
-- OpenAI API 사용 시 요금이 발생합니다 (기본 GPT 모델은 `gpt-5-mini`)
-- 긴 오디오 파일은 처리 시간이 오래 걸릴 수 있습니다
-- Whisper STT는 OpenAI API를 사용하므로 로컬 모델 다운로드는 필요 없습니다
-
-## GitHub에 코드 저장하기
-
-### 1. GitHub에 새 리포지토리 생성
-
-1. https://github.com 에서 로그인
-2. 우측 상단 "+" 버튼 → "New repository" 클릭
-3. 리포지토리 이름 입력 (예: `meeting-minutes-bot`)
-4. Public 또는 Private 선택
-5. **"Add a README file" 체크 해제** (이미 있음)
-6. "Create repository" 클릭
-
-### 2. 로컬 코드를 GitHub에 업로드
-
-```bash
-# Git 리포지토리 초기화 (아직 안했다면)
-git init
-
-# 파일 추가
-git add .
-
-# 커밋 생성
-git commit -m "Initial commit: 회의록 봇 API"
-
-# GitHub 리포지토리와 연결 (YOUR_USERNAME을 본인 GitHub 아이디로 변경)
-git remote add origin https://github.com/YOUR_USERNAME/meeting-minutes-bot.git
-
-# GitHub에 업로드
-git push -u origin main
-```
-
-### 3. 다른 컴퓨터에서 사용하기
-
-```bash
-# 리포지토리 클론
-git clone https://github.com/YOUR_USERNAME/meeting-minutes-bot.git
-cd meeting-minutes-bot
-
-# 가상환경 생성 및 활성화
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# 패키지 설치
-pip install -r requirements.txt
-
-# .env 파일 생성 및 API 키 입력
-cp .env.example .env
-# .env 파일을 열어서 API 키 입력
-
-# ffmpeg 설치 (macOS)
-brew install ffmpeg
-
-# 서버 실행
-python api.py
-```
+- Groq, OpenAI, Anthropic API 사용 시 각각 요금이 발생합니다
+- 기본 LLM 모델은 `gpt-5-mini`이며, 웹 UI에서 모델 변경 가능
+- 25MB 초과 오디오 파일은 자동으로 10분 단위로 분할 처리됩니다
+- ffmpeg가 설치되어 있어야 합니다 (Docker 이미지에는 포함)
 
 ## 문제 해결
 
-### "OPENAI_API_KEY가 설정되지 않았습니다" 오류
-- `.env` 파일이 올바른 위치에 있는지 확인
-- API 키가 제대로 입력되었는지 확인
-
-### Whisper API 호출 실패
-- `OPENAI_API_KEY`와 네트워크 상태 확인
-- OpenAI 상태 페이지 점검 후 재시도
+### API 키 관련 오류
+- `.env` 파일이 프로젝트 루트에 있는지 확인
+- 사용하려는 모델에 해당하는 API 키가 설정되어 있는지 확인
+- Groq 키는 STT에 필수, OpenAI/Anthropic 키는 선택한 LLM 모델에 따라 필요
 
 ### ffmpeg 오류
 - **macOS**: `brew install ffmpeg`
 - **Ubuntu/Debian**: `sudo apt-get install ffmpeg`
 - **Windows**: https://ffmpeg.org/download.html 에서 다운로드
+- **Docker**: Dockerfile에 이미 포함되어 있음
+
+### DB 연결 오류
+- `DATABASE_URL` 환경변수가 올바른 PostgreSQL URL인지 확인
+- 설정하지 않으면 로컬 SQLite (`meeting_minutes.db`)를 자동 사용
 
 ## 라이선스
 
