@@ -651,6 +651,9 @@ async def search_summaries(
 # 프론트엔드 정적 파일 서빙
 # ============================================
 
+# 배포(재시작) 시마다 캐시 버스팅용 버전 생성
+_CACHE_VERSION = str(int(time.time()))
+
 # CSS, JS 정적 파일 마운트
 app.mount("/css", StaticFiles(directory="frontend/css"), name="css")
 app.mount("/js", StaticFiles(directory="frontend/js"), name="js")
@@ -659,9 +662,13 @@ app.mount("/images", StaticFiles(directory="frontend/images"), name="images")
 
 @app.get("/app", response_class=HTMLResponse)
 async def serve_frontend():
-    """프론트엔드 메인 페이지 서빙"""
+    """프론트엔드 메인 페이지 서빙 (캐시 버스팅 적용)"""
     with open("frontend/index.html", "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read())
+        html = f.read()
+    # CSS/JS 파일에 버전 쿼리스트링 추가하여 배포 시 캐시 자동 무효화
+    html = html.replace('href="css/style.css"', f'href="css/style.css?v={_CACHE_VERSION}"')
+    html = html.replace('src="js/app.js"', f'src="js/app.js?v={_CACHE_VERSION}"')
+    return HTMLResponse(content=html)
 
 
 if __name__ == "__main__":
