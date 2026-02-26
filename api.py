@@ -654,6 +654,7 @@ async def search_summaries(
 # CSS, JS 정적 파일 마운트
 app.mount("/css", StaticFiles(directory="frontend/css"), name="css")
 app.mount("/js", StaticFiles(directory="frontend/js"), name="js")
+app.mount("/images", StaticFiles(directory="frontend/images"), name="images")
 
 
 @app.get("/app", response_class=HTMLResponse)

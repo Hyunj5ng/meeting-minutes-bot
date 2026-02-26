@@ -6,23 +6,26 @@
 }
 
 :root {
-    --primary-color: #4F46E5;
-    --primary-hover: #4338CA;
+    --primary-color: #0D9488;
+    --primary-hover: #0F766E;
+    --primary-light: #CCFBF1;
     --success-color: #10B981;
     --danger-color: #EF4444;
-    --text-primary: #111827;
-    --text-secondary: #6B7280;
-    --bg-primary: #F9FAFB;
+    --accent-warm: #F59E0B;
+    --accent-coral: #F97316;
+    --text-primary: #134E4A;
+    --text-secondary: #5F7A76;
+    --bg-primary: #F0FDFA;
     --bg-secondary: #FFFFFF;
-    --border-color: #E5E7EB;
-    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    --border-color: #D1E7E4;
+    --shadow-sm: 0 1px 2px 0 rgba(13, 148, 136, 0.06);
+    --shadow-md: 0 4px 6px -1px rgba(13, 148, 136, 0.1);
+    --shadow-lg: 0 10px 25px -3px rgba(13, 148, 136, 0.12);
 }
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #0D9488 0%, #06B6D4 50%, #2DD4BF 100%);
     min-height: 100vh;
     color: var(--text-primary);
     line-height: 1.6;
@@ -47,6 +50,13 @@ body {
     justify-content: center;
     gap: 1rem;
     margin-bottom: 0.5rem;
+}
+
+.logo img {
+    width: 72px;
+    height: 72px;
+    object-fit: contain;
+    border-radius: 12px;
 }
 
 .logo h1 {
@@ -74,6 +84,20 @@ body {
     border-radius: 1rem;
     padding: 2rem;
     box-shadow: var(--shadow-lg);
+    position: relative;
+    overflow: hidden;
+}
+
+.upload-card::before,
+.progress-card::before,
+.result-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #8BC34A, #F59E0B, #F97316, #EF4444);
 }
 
 /* 업로드 섹션 */
@@ -88,12 +112,12 @@ body {
 
 .upload-area:hover {
     border-color: var(--primary-color);
-    background: #F3F4F6;
+    background: var(--bg-primary);
 }
 
 .upload-area.drag-over {
     border-color: var(--primary-color);
-    background: #EEF2FF;
+    background: var(--primary-light);
 }
 
 .upload-icon {
@@ -203,8 +227,8 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: #F0FDF4;
-    border: 1px solid #86EFAC;
+    background: var(--primary-light);
+    border: 1px solid #99F6E4;
     border-radius: 0.5rem;
     padding: 1rem;
     margin-top: 1.5rem;
@@ -285,7 +309,7 @@ body {
 .text-input:focus {
     outline: none;
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+    box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.15);
 }
 
 .text-input::placeholder {
@@ -395,7 +419,7 @@ body {
 
 .progress-bar {
     height: 100%;
-    background: linear-gradient(90deg, var(--primary-color) 0%, #818CF8 100%);
+    background: linear-gradient(90deg, var(--primary-color) 0%, #06B6D4 100%);
     border-radius: 9999px;
     transition: width 0.5s ease;
     position: relative;
@@ -434,12 +458,12 @@ body {
 }
 
 .step.active {
-    background: #EEF2FF;
+    background: var(--primary-light);
     border: 1px solid var(--primary-color);
 }
 
 .step.completed {
-    background: #F0FDF4;
+    background: #ECFDF5;
     border: 1px solid var(--success-color);
 }
 
