@@ -191,8 +191,47 @@ def add_cost_columns():
         db.close()
 
 
+def add_context_columns():
+    """회의 맥락 정보를 위한 컬럼 추가 마이그레이션"""
+    db = SessionLocal()
+
+    try:
+        print("=" * 80)
+        print("회의 맥락 컬럼 추가 마이그레이션")
+        print("=" * 80)
+
+        inspector = inspect(engine)
+
+        if 'transcript_records' in inspector.get_table_names():
+            existing_columns = [col['name'] for col in inspector.get_columns('transcript_records')]
+            for col_name, col_type in [
+                ('project_name', 'VARCHAR(500)'),
+                ('meeting_title', 'VARCHAR(500)'),
+                ('attendees', 'TEXT'),
+                ('keywords', 'TEXT'),
+            ]:
+                if col_name not in existing_columns:
+                    db.execute(text(f"ALTER TABLE transcript_records ADD COLUMN {col_name} {col_type}"))
+                    print(f"  ✓ transcript_records.{col_name} 컬럼 추가")
+                else:
+                    print(f"  - transcript_records.{col_name} 이미 존재")
+
+        db.commit()
+        print("\n✅ 회의 맥락 컬럼 추가 완료!")
+
+    except Exception as e:
+        db.rollback()
+        print(f"\n❌ 오류 발생: {str(e)}")
+        sys.exit(1)
+
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "cost":
         add_cost_columns()
+    elif len(sys.argv) > 1 and sys.argv[1] == "context":
+        add_context_columns()
     else:
         migrate_data()

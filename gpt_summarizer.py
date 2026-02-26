@@ -32,31 +32,32 @@ class GPTSummarizer:
             self.anthropic_client = None
             print("경고: ANTHROPIC_API_KEY가 설정되지 않았습니다.")
 
-    async def summarize(self, text, model="gpt-5-mini"):
+    async def summarize(self, text, model="gpt-5-mini", context=None):
         """
         회의 내용을 LLM을 사용하여 정리된 회의록으로 변환합니다.
 
         Args:
             text: STT로 변환된 원본 텍스트
             model: 사용할 모델
+            context: 회의 맥락 정보 dict (project_name, meeting_title, attendees, keywords)
 
         Returns:
             dict: {"summary": str, "input_tokens": int, "output_tokens": int}
         """
         # Claude 모델인지 확인
         if model in CLAUDE_MODELS:
-            return await self._summarize_with_claude(text, model)
+            return await self._summarize_with_claude(text, model, context)
         else:
-            return await self._summarize_with_openai(text, model)
+            return await self._summarize_with_openai(text, model, context)
 
-    async def _summarize_with_openai(self, text, model):
+    async def _summarize_with_openai(self, text, model, context=None):
         """OpenAI GPT로 요약 (비동기)"""
         if not self.openai_client:
             raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다.")
 
         print(f"OpenAI {model}을 사용하여 회의록 작성 중...")
 
-        prompt = self._get_prompt(text)
+        prompt = self._get_prompt(text, context)
 
         api_params = {
             "model": model,
@@ -86,14 +87,14 @@ class GPTSummarizer:
             "output_tokens": output_tokens
         }
 
-    async def _summarize_with_claude(self, text, model):
+    async def _summarize_with_claude(self, text, model, context=None):
         """Anthropic Claude로 요약 (비동기)"""
         if not self.anthropic_client:
             raise ValueError("ANTHROPIC_API_KEY가 설정되지 않았습니다.")
 
         print(f"Claude {model}을 사용하여 회의록 작성 중...")
 
-        prompt = self._get_prompt(text)
+        prompt = self._get_prompt(text, context)
 
         response = await self.anthropic_client.messages.create(
             model=model,
@@ -115,10 +116,24 @@ class GPTSummarizer:
             "output_tokens": output_tokens
         }
 
-    def _get_prompt(self, text):
+    def _get_prompt(self, text, context=None):
         """공통 프롬프트 생성"""
-        return f"""
-다음은 회의 중 녹음된 음성을 텍스트로 변환한 내용입니다.
+        # 맥락 정보가 있으면 프롬프트 상단에 삽입
+        context_section = ""
+        if context:
+            lines = []
+            if context.get("project_name"):
+                lines.append(f"- 프로젝트: {context['project_name']}")
+            if context.get("meeting_title"):
+                lines.append(f"- 제목: {context['meeting_title']}")
+            if context.get("attendees"):
+                lines.append(f"- 참석자: {context['attendees']}")
+            if context.get("keywords"):
+                lines.append(f"- 키워드: {context['keywords']}")
+            if lines:
+                context_section = "회의 정보:\n" + "\n".join(lines) + "\n\n위 맥락을 참고하여 회의록을 작성해주세요.\n\n"
+
+        return f"""{context_section}다음은 회의 중 녹음된 음성을 텍스트로 변환한 내용입니다.
 이를 읽기 쉽고 체계적인 회의록으로 정리해주세요.
 
 다음 형식으로 작성해주세요:

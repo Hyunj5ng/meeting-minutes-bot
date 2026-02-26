@@ -202,6 +202,10 @@ async function handleConvert() {
         formData.append('whisper_model', 'base');  // 기본값 사용
         formData.append('audio_duration', audioDuration || 0);
         formData.append('file_size', selectedFile.size);
+        formData.append('project_name', document.getElementById('projectName').value);
+        formData.append('meeting_title', document.getElementById('meetingTitle').value);
+        formData.append('attendees', document.getElementById('attendees').value);
+        formData.append('keywords', document.getElementById('keywords').value);
 
         // 1단계: 업로드 (0-15%)
         updateStepProgress(1, 10, 'active', '파일 업로드 중...');

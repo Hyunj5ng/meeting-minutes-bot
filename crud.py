@@ -16,7 +16,11 @@ def create_transcript_record(
     whisper_model: str = "base",
     audio_duration: Optional[float] = None,
     stt_processing_time: Optional[float] = None,
-    stt_cost: Optional[float] = None
+    stt_cost: Optional[float] = None,
+    project_name: Optional[str] = None,
+    meeting_title: Optional[str] = None,
+    attendees: Optional[str] = None,
+    keywords: Optional[str] = None
 ) -> TranscriptRecord:
     """새 STT 변환 레코드 생성"""
     record = TranscriptRecord(
@@ -26,7 +30,11 @@ def create_transcript_record(
         transcript=transcript,
         whisper_model=whisper_model,
         stt_processing_time=stt_processing_time,
-        stt_cost=stt_cost
+        stt_cost=stt_cost,
+        project_name=project_name or None,
+        meeting_title=meeting_title or None,
+        attendees=attendees or None,
+        keywords=keywords or None
     )
     db.add(record)
     db.commit()

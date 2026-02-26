@@ -24,6 +24,12 @@ class TranscriptRecord(Base):
     # 모델 정보
     whisper_model = Column(String(50), nullable=False, default="base", comment="사용한 Whisper 모델")
 
+    # 회의 맥락 정보
+    project_name = Column(String(500), nullable=True, comment="프로젝트명")
+    meeting_title = Column(String(500), nullable=True, comment="회의 제목")
+    attendees = Column(Text, nullable=True, comment="참석자 목록")
+    keywords = Column(Text, nullable=True, comment="관련 키워드")
+
     # 처리 시간
     stt_processing_time = Column(Float, nullable=True, comment="STT 처리 시간 (초)")
 

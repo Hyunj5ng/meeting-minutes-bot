@@ -191,6 +191,10 @@ async def transcribe_only(
     whisper_model: WhisperModel = Form(WhisperModel.BASE, description="Whisper API는 단일 모델 사용 (값은 기록용)"),
     audio_duration: float = Form(None, description="오디오 길이 (초)"),
     file_size: int = Form(..., description="파일 크기 (bytes)"),
+    project_name: str = Form("", description="프로젝트명"),
+    meeting_title: str = Form("", description="회의 제목"),
+    attendees: str = Form("", description="참석자 (쉼표로 구분)"),
+    keywords: str = Form("", description="관련 키워드 (쉼표로 구분)"),
     db: Session = Depends(get_db)
 ):
     """
@@ -250,7 +254,11 @@ async def transcribe_only(
             whisper_model=whisper_model.value,
             audio_duration=audio_duration,
             stt_processing_time=stt_time,
-            stt_cost=stt_cost
+            stt_cost=stt_cost,
+            project_name=project_name,
+            meeting_title=meeting_title,
+            attendees=attendees,
+            keywords=keywords
         )
         print(f"DB 저장 완료 (Transcript ID: {transcript_record.id})")
 
@@ -303,11 +311,22 @@ async def summarize_transcript(
     unique_id = str(uuid.uuid4())[:8]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+    # 회의 맥락 정보 구성
+    context = {}
+    if transcript_record.project_name:
+        context["project_name"] = transcript_record.project_name
+    if transcript_record.meeting_title:
+        context["meeting_title"] = transcript_record.meeting_title
+    if transcript_record.attendees:
+        context["attendees"] = transcript_record.attendees
+    if transcript_record.keywords:
+        context["keywords"] = transcript_record.keywords
+
     try:
         # GPT 요약 - 시간 측정
         print(f"GPT ({gpt_model.value})로 회의록 작성 중...")
         start_time = time.time()
-        result = await gpt_summarizer.summarize(transcript, model=gpt_model.value)
+        result = await gpt_summarizer.summarize(transcript, model=gpt_model.value, context=context or None)
         gpt_time = time.time() - start_time
 
         summary = result["summary"]
