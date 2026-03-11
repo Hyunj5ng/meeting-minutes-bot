@@ -27,8 +27,8 @@ else:
     # PostgreSQL용 설정 (동시 50명 지원)
     engine = create_engine(
         DATABASE_URL,
-        pool_size=20,
-        max_overflow=30,
+        pool_size=5,
+        max_overflow=10,
         pool_pre_ping=True,
         pool_recycle=1800,
     )
