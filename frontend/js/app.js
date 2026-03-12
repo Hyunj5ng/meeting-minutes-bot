@@ -188,10 +188,9 @@ async function fetchUsageInfo() {
         const usageBar = document.getElementById('usageBar');
         usageBar.style.display = 'flex';
 
-        document.getElementById('dailyStt').textContent = data.stt.daily.used;
+        // STT 분 단위 (소수점 반올림)
+        document.getElementById('dailyStt').textContent = Math.round(data.stt.daily.used);
         document.getElementById('dailySttLimit').textContent = data.stt.daily.limit;
-        document.getElementById('dailySummarize').textContent = data.summarize.daily.used;
-        document.getElementById('dailySummarizeLimit').textContent = data.summarize.daily.limit;
     } catch (error) {
         console.warn('사용량 조회 실패:', error);
     }

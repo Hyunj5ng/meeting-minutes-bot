@@ -57,12 +57,14 @@ def create_usage_record(
     user_id: int,
     action_type: str,
     cost: float = 0.0,
+    duration_minutes: float = 0.0,
 ) -> UsageRecord:
     """사용량 기록 생성"""
     record = UsageRecord(
         user_id=user_id,
         action_type=action_type,
         cost=cost,
+        duration_minutes=duration_minutes,
     )
     db.add(record)
     db.commit()
@@ -88,6 +90,28 @@ def get_usage_count(
         UsageRecord.action_type == action_type,
         UsageRecord.created_at >= start,
     ).scalar() or 0
+
+
+def get_usage_minutes(
+    db: Session,
+    user_id: int,
+    action_type: str,
+    period: str = "daily",
+) -> float:
+    """특정 기간 내 사용한 총 분(minutes) 조회 (STT용)"""
+    now = datetime.now(timezone.utc)
+    if period == "daily":
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    else:  # monthly
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    return db.query(
+        sa_func.coalesce(sa_func.sum(UsageRecord.duration_minutes), 0.0)
+    ).filter(
+        UsageRecord.user_id == user_id,
+        UsageRecord.action_type == action_type,
+        UsageRecord.created_at >= start,
+    ).scalar() or 0.0
 
 
 def get_usage_cost(

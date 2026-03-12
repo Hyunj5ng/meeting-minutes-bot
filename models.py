@@ -120,6 +120,7 @@ class UsageRecord(Base):
 
     # 사용 정보
     action_type = Column(String(20), nullable=False, comment="stt 또는 summarize")
+    duration_minutes = Column(Float, nullable=True, default=0.0, comment="오디오 길이 (분, STT 전용)")
     cost = Column(Float, nullable=True, default=0.0, comment="API 비용 (USD)")
 
     # 타임스탬프

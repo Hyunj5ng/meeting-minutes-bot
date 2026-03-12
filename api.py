@@ -33,11 +33,9 @@ MODEL_PRICING = {
     "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
 }
 
-# 사용량 제한 (환경변수로 설정 가능)
-DAILY_STT_LIMIT = int(os.getenv("DAILY_STT_LIMIT", "10"))
-MONTHLY_STT_LIMIT = int(os.getenv("MONTHLY_STT_LIMIT", "100"))
-DAILY_SUMMARIZE_LIMIT = int(os.getenv("DAILY_SUMMARIZE_LIMIT", "20"))
-MONTHLY_SUMMARIZE_LIMIT = int(os.getenv("MONTHLY_SUMMARIZE_LIMIT", "200"))
+# 사용량 제한 (환경변수로 설정 가능) — STT 분(minutes) 단위만 적용
+DAILY_STT_LIMIT_MINUTES = int(os.getenv("DAILY_STT_LIMIT_MINUTES", "60"))
+MONTHLY_STT_LIMIT_MINUTES = int(os.getenv("MONTHLY_STT_LIMIT_MINUTES", "600"))
 
 
 def calculate_stt_cost(audio_duration_seconds: float) -> float:
@@ -57,25 +55,22 @@ def calculate_llm_cost(model: str, input_tokens: int, output_tokens: int) -> flo
     return round(cost, 6)
 
 
-def check_usage_limit(db: Session, user_id: int, action_type: str):
-    """사용량 한도를 확인하고 초과 시 HTTPException(429)을 발생시킨다."""
-    if action_type == "stt":
-        daily_limit, monthly_limit = DAILY_STT_LIMIT, MONTHLY_STT_LIMIT
-    else:
-        daily_limit, monthly_limit = DAILY_SUMMARIZE_LIMIT, MONTHLY_SUMMARIZE_LIMIT
-
-    daily_count = crud.get_usage_count(db, user_id, action_type, period="daily")
-    if daily_count >= daily_limit:
+def check_usage_limit(db: Session, user_id: int, audio_minutes: float = 0.0):
+    """STT 사용량(분) 한도를 확인하고 초과 시 HTTPException(429)을 발생시킨다."""
+    daily_used = crud.get_usage_minutes(db, user_id, "stt", period="daily")
+    if daily_used + audio_minutes > DAILY_STT_LIMIT_MINUTES:
+        remaining = max(0, DAILY_STT_LIMIT_MINUTES - daily_used)
         raise HTTPException(
             status_code=429,
-            detail=f"일일 {action_type} 사용 한도({daily_limit}회)를 초과했습니다. 내일 다시 시도해주세요."
+            detail=f"일일 사용 한도({DAILY_STT_LIMIT_MINUTES}분)를 초과합니다. 잔여: {remaining:.0f}분. 내일 다시 시도해주세요."
         )
 
-    monthly_count = crud.get_usage_count(db, user_id, action_type, period="monthly")
-    if monthly_count >= monthly_limit:
+    monthly_used = crud.get_usage_minutes(db, user_id, "stt", period="monthly")
+    if monthly_used + audio_minutes > MONTHLY_STT_LIMIT_MINUTES:
+        remaining = max(0, MONTHLY_STT_LIMIT_MINUTES - monthly_used)
         raise HTTPException(
             status_code=429,
-            detail=f"월간 {action_type} 사용 한도({monthly_limit}회)를 초과했습니다."
+            detail=f"월간 사용 한도({MONTHLY_STT_LIMIT_MINUTES}분)를 초과합니다. 잔여: {remaining:.0f}분."
         )
 
 
@@ -285,20 +280,15 @@ async def get_usage(
     db: Session = Depends(get_db),
 ):
     """현재 사용자의 사용량 현황 및 잔여 한도 반환"""
-    daily_stt = crud.get_usage_count(db, current_user.id, "stt", "daily")
-    monthly_stt = crud.get_usage_count(db, current_user.id, "stt", "monthly")
-    daily_summarize = crud.get_usage_count(db, current_user.id, "summarize", "daily")
-    monthly_summarize = crud.get_usage_count(db, current_user.id, "summarize", "monthly")
+    daily_stt_minutes = crud.get_usage_minutes(db, current_user.id, "stt", "daily")
+    monthly_stt_minutes = crud.get_usage_minutes(db, current_user.id, "stt", "monthly")
     monthly_cost = crud.get_usage_cost(db, current_user.id, "monthly")
 
     return {
         "stt": {
-            "daily": {"used": daily_stt, "limit": DAILY_STT_LIMIT},
-            "monthly": {"used": monthly_stt, "limit": MONTHLY_STT_LIMIT},
-        },
-        "summarize": {
-            "daily": {"used": daily_summarize, "limit": DAILY_SUMMARIZE_LIMIT},
-            "monthly": {"used": monthly_summarize, "limit": MONTHLY_SUMMARIZE_LIMIT},
+            "unit": "minutes",
+            "daily": {"used": round(daily_stt_minutes, 1), "limit": DAILY_STT_LIMIT_MINUTES},
+            "monthly": {"used": round(monthly_stt_minutes, 1), "limit": MONTHLY_STT_LIMIT_MINUTES},
         },
         "monthly_cost": round(monthly_cost, 4),
     }
@@ -324,8 +314,9 @@ async def transcribe_only(
     """
     음성 파일을 텍스트로만 변환 (STT만 수행) 및 DB 저장
     """
-    # 사용량 한도 확인
-    check_usage_limit(db, current_user.id, "stt")
+    # 사용량 한도 확인 (분 단위)
+    audio_minutes = (audio_duration or 0) / 60.0
+    check_usage_limit(db, current_user.id, audio_minutes=audio_minutes)
 
     # 파일 확장자 확인
     allowed_extensions = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac']
@@ -380,8 +371,8 @@ async def transcribe_only(
         )
         print(f"DB 저장 완료 (Transcript ID: {transcript_record.id})")
 
-        # 사용량 기록
-        crud.create_usage_record(db, current_user.id, "stt", cost=stt_cost)
+        # 사용량 기록 (분 단위)
+        crud.create_usage_record(db, current_user.id, "stt", cost=stt_cost, duration_minutes=audio_minutes)
 
         return JSONResponse(content={
             "success": True,
@@ -416,8 +407,6 @@ async def summarize_transcript(
     """
     텍스트를 GPT로 요약하여 회의록 생성 및 새 SummaryRecord 생성
     """
-    # 사용량 한도 확인
-    check_usage_limit(db, current_user.id, "summarize")
 
     # DB에서 Transcript 레코드 조회 (소유권 확인)
     transcript_record = crud.get_transcript_record(db, transcript_id, current_user.id)
@@ -464,9 +453,6 @@ async def summarize_transcript(
             llm_cost=llm_cost
         )
         print(f"DB 저장 완료 (Summary ID: {summary_record.id}, Transcript ID: {transcript_id})")
-
-        # 사용량 기록
-        crud.create_usage_record(db, current_user.id, "summarize", cost=llm_cost)
 
         # 파일 저장 또는 응답 준비
         summary_path = os.path.join(OUTPUT_DIR, f"meeting_minutes_{timestamp}_{unique_id}.txt")
@@ -548,9 +534,8 @@ async def transcribe_audio(
     """
     음성 파일을 업로드하여 회의록 생성 (레거시 엔드포인트, 한번에 처리)
     """
-    # 사용량 한도 확인 (STT + 요약 모두)
-    check_usage_limit(db, current_user.id, "stt")
-    check_usage_limit(db, current_user.id, "summarize")
+    # 사용량 한도 확인 (레거시 엔드포인트는 audio_duration 없이 호출)
+    check_usage_limit(db, current_user.id, audio_minutes=0.0)
 
     # 파일 확장자 확인
     allowed_extensions = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac']
@@ -589,9 +574,6 @@ async def transcribe_audio(
         result = await gpt_summarizer.summarize(transcript, model=gpt_model.value)
         summary = result["summary"]
         print("회의록 작성 완료!")
-
-        # 사용량 기록 (요약)
-        crud.create_usage_record(db, current_user.id, "summarize", cost=0.0)
 
         # 3단계: 파일 저장 또는 응답 준비
         summary_path = os.path.join(OUTPUT_DIR, f"meeting_minutes_{timestamp}_{unique_id}.txt")
