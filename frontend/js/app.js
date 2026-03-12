@@ -148,6 +148,9 @@ function showMainApp() {
         }
     }
 
+    // 사용량 바 즉시 표시 (API 호출 전에도 기본값 보이게)
+    document.getElementById('usageBar').style.display = 'flex';
+
     // DOM 요소 초기화
     initDomElements();
     setupEventListeners();
