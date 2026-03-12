@@ -15,4 +15,5 @@ boto3
 
 # Auth
 google-auth
+requests
 python-jose[cryptography]
