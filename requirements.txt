@@ -12,3 +12,7 @@ sqlalchemy
 psycopg2-binary
 alembic
 boto3
+
+# Auth
+google-auth
+python-jose[cryptography]

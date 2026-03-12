@@ -16,7 +16,8 @@ import boto3
 
 # 데이터베이스 관련 임포트
 from database import get_db, engine, Base
-from models import TranscriptRecord, SummaryRecord
+from models import TranscriptRecord, SummaryRecord, User
+from auth import get_current_user, verify_google_token, create_access_token
 import crud
 
 
@@ -31,6 +32,12 @@ MODEL_PRICING = {
     "claude-sonnet-4-5-20250929": {"input": 3.00, "output": 15.00},
     "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
 }
+
+# 사용량 제한 (환경변수로 설정 가능)
+DAILY_STT_LIMIT = int(os.getenv("DAILY_STT_LIMIT", "10"))
+MONTHLY_STT_LIMIT = int(os.getenv("MONTHLY_STT_LIMIT", "100"))
+DAILY_SUMMARIZE_LIMIT = int(os.getenv("DAILY_SUMMARIZE_LIMIT", "20"))
+MONTHLY_SUMMARIZE_LIMIT = int(os.getenv("MONTHLY_SUMMARIZE_LIMIT", "200"))
 
 
 def calculate_stt_cost(audio_duration_seconds: float) -> float:
@@ -48,6 +55,28 @@ def calculate_llm_cost(model: str, input_tokens: int, output_tokens: int) -> flo
         return 0.0
     cost = (input_tokens * pricing["input"] + output_tokens * pricing["output"]) / 1_000_000
     return round(cost, 6)
+
+
+def check_usage_limit(db: Session, user_id: int, action_type: str):
+    """사용량 한도를 확인하고 초과 시 HTTPException(429)을 발생시킨다."""
+    if action_type == "stt":
+        daily_limit, monthly_limit = DAILY_STT_LIMIT, MONTHLY_STT_LIMIT
+    else:
+        daily_limit, monthly_limit = DAILY_SUMMARIZE_LIMIT, MONTHLY_SUMMARIZE_LIMIT
+
+    daily_count = crud.get_usage_count(db, user_id, action_type, period="daily")
+    if daily_count >= daily_limit:
+        raise HTTPException(
+            status_code=429,
+            detail=f"일일 {action_type} 사용 한도({daily_limit}회)를 초과했습니다. 내일 다시 시도해주세요."
+        )
+
+    monthly_count = crud.get_usage_count(db, user_id, action_type, period="monthly")
+    if monthly_count >= monthly_limit:
+        raise HTTPException(
+            status_code=429,
+            detail=f"월간 {action_type} 사용 한도({monthly_limit}회)를 초과했습니다."
+        )
 
 
 # LLM 모델 선택을 위한 Enum (GPT + Claude)
@@ -160,6 +189,10 @@ app.add_middleware(
 )
 
 
+# ============================================
+# 공개 엔드포인트 (인증 불필요)
+# ============================================
+
 @app.get("/")
 async def root():
     """API 상태 확인"""
@@ -185,6 +218,96 @@ async def health_check():
     }
 
 
+# ============================================
+# 인증 엔드포인트
+# ============================================
+
+@app.post("/auth/google")
+async def google_login(
+    token: str = Form(..., description="Google ID 토큰"),
+    db: Session = Depends(get_db),
+):
+    """Google ID 토큰으로 로그인/회원가입 후 JWT 반환"""
+    # Google 토큰 검증
+    google_info = await verify_google_token(token)
+
+    # 기존 사용자 조회 또는 신규 생성
+    user = crud.get_user_by_google_id(db, google_info["google_id"])
+    if user:
+        user = crud.update_user_login(
+            db, user,
+            name=google_info["name"],
+            picture=google_info["picture"],
+        )
+    else:
+        user = crud.create_user(
+            db,
+            google_id=google_info["google_id"],
+            email=google_info["email"],
+            name=google_info["name"],
+            picture=google_info["picture"],
+        )
+
+    # JWT 발급
+    access_token = create_access_token(user.id, user.email)
+
+    return {
+        "access_token": access_token,
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "picture": user.picture,
+        }
+    }
+
+
+@app.get("/auth/me")
+async def get_me(current_user: User = Depends(get_current_user)):
+    """현재 로그인한 사용자 정보 반환"""
+    return {
+        "user": {
+            "id": current_user.id,
+            "email": current_user.email,
+            "name": current_user.name,
+            "picture": current_user.picture,
+        }
+    }
+
+
+# ============================================
+# 사용량 조회 엔드포인트
+# ============================================
+
+@app.get("/usage")
+async def get_usage(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """현재 사용자의 사용량 현황 및 잔여 한도 반환"""
+    daily_stt = crud.get_usage_count(db, current_user.id, "stt", "daily")
+    monthly_stt = crud.get_usage_count(db, current_user.id, "stt", "monthly")
+    daily_summarize = crud.get_usage_count(db, current_user.id, "summarize", "daily")
+    monthly_summarize = crud.get_usage_count(db, current_user.id, "summarize", "monthly")
+    monthly_cost = crud.get_usage_cost(db, current_user.id, "monthly")
+
+    return {
+        "stt": {
+            "daily": {"used": daily_stt, "limit": DAILY_STT_LIMIT},
+            "monthly": {"used": monthly_stt, "limit": MONTHLY_STT_LIMIT},
+        },
+        "summarize": {
+            "daily": {"used": daily_summarize, "limit": DAILY_SUMMARIZE_LIMIT},
+            "monthly": {"used": monthly_summarize, "limit": MONTHLY_SUMMARIZE_LIMIT},
+        },
+        "monthly_cost": round(monthly_cost, 4),
+    }
+
+
+# ============================================
+# 보호된 엔드포인트 (인증 필요)
+# ============================================
+
 @app.post("/transcribe-only")
 async def transcribe_only(
     file: UploadFile = File(..., description="음성 파일 (mp3, wav, m4a 등)"),
@@ -195,21 +318,15 @@ async def transcribe_only(
     meeting_title: str = Form("", description="회의 제목"),
     attendees: str = Form("", description="참석자 (쉼표로 구분)"),
     keywords: str = Form("", description="관련 키워드 (쉼표로 구분)"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     음성 파일을 텍스트로만 변환 (STT만 수행) 및 DB 저장
-
-    Args:
-        file: 음성 파일
-        whisper_model: Whisper 모델 선택 (참고용, 서버 재시작 필요)
-        audio_duration: 오디오 길이 (초)
-        file_size: 파일 크기 (bytes)
-        db: 데이터베이스 세션
-
-    Returns:
-        JSON 응답 (transcript 및 record_id 포함)
     """
+    # 사용량 한도 확인
+    check_usage_limit(db, current_user.id, "stt")
+
     # 파일 확장자 확인
     allowed_extensions = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac']
     file_ext = os.path.splitext(file.filename)[1].lower()
@@ -251,6 +368,7 @@ async def transcribe_only(
             filename=file.filename,
             file_size=file_size,
             transcript=transcript,
+            user_id=current_user.id,
             whisper_model=whisper_model.value,
             audio_duration=audio_duration,
             stt_processing_time=stt_time,
@@ -262,6 +380,9 @@ async def transcribe_only(
         )
         print(f"DB 저장 완료 (Transcript ID: {transcript_record.id})")
 
+        # 사용량 기록
+        crud.create_usage_record(db, current_user.id, "stt", cost=stt_cost)
+
         return JSONResponse(content={
             "success": True,
             "transcript_id": transcript_record.id,
@@ -270,6 +391,8 @@ async def transcribe_only(
             "timestamp": timestamp
         })
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"오류 발생: {str(e)}")
         raise HTTPException(status_code=500, detail=f"처리 중 오류 발생: {str(e)}")
@@ -287,23 +410,17 @@ async def summarize_transcript(
     gpt_model: GPTModel = Form(GPTModel.GPT_5_MINI, description="사용할 GPT 모델 선택"),
     save_files: bool = Form(True, description="결과 파일을 서버에 저장할지 여부"),
     return_file: bool = Form(False, description="회의록을 텍스트 파일로 다운로드 (true 시 파일 응답, false 시 JSON 응답)"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     텍스트를 GPT로 요약하여 회의록 생성 및 새 SummaryRecord 생성
-
-    Args:
-        transcript_id: Transcript 레코드 ID (STT 단계에서 생성된 ID)
-        gpt_model: GPT 모델 선택 (기본값: gpt-5-mini)
-        save_files: 결과를 파일로 저장할지 여부 (기본값: True)
-        return_file: True이면 회의록 텍스트 파일로 응답, False이면 JSON으로 응답 (기본값: False)
-        db: 데이터베이스 세션
-
-    Returns:
-        JSON 응답 또는 텍스트 파일 다운로드
     """
-    # DB에서 Transcript 레코드 조회
-    transcript_record = crud.get_transcript_record(db, transcript_id)
+    # 사용량 한도 확인
+    check_usage_limit(db, current_user.id, "summarize")
+
+    # DB에서 Transcript 레코드 조회 (소유권 확인)
+    transcript_record = crud.get_transcript_record(db, transcript_id, current_user.id)
     if not transcript_record:
         raise HTTPException(status_code=404, detail="Transcript 레코드를 찾을 수 없습니다")
 
@@ -347,6 +464,9 @@ async def summarize_transcript(
             llm_cost=llm_cost
         )
         print(f"DB 저장 완료 (Summary ID: {summary_record.id}, Transcript ID: {transcript_id})")
+
+        # 사용량 기록
+        crud.create_usage_record(db, current_user.id, "summarize", cost=llm_cost)
 
         # 파일 저장 또는 응답 준비
         summary_path = os.path.join(OUTPUT_DIR, f"meeting_minutes_{timestamp}_{unique_id}.txt")
@@ -408,6 +528,8 @@ async def summarize_transcript(
 
         return JSONResponse(content=response_data)
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"오류 발생: {str(e)}")
         raise HTTPException(status_code=500, detail=f"처리 중 오류 발생: {str(e)}")
@@ -419,21 +541,17 @@ async def transcribe_audio(
     gpt_model: GPTModel = Form(GPTModel.GPT_5_MINI, description="사용할 GPT 모델 선택"),
     whisper_model: WhisperModel = Form(WhisperModel.BASE, description="Whisper API는 단일 모델 사용 (값은 기록용)"),
     save_files: bool = Form(True, description="결과 파일을 서버에 저장할지 여부"),
-    return_file: bool = Form(False, description="회의록을 텍스트 파일로 다운로드 (true 시 파일 응답, false 시 JSON 응답)")
+    return_file: bool = Form(False, description="회의록을 텍스트 파일로 다운로드 (true 시 파일 응답, false 시 JSON 응답)"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """
     음성 파일을 업로드하여 회의록 생성 (레거시 엔드포인트, 한번에 처리)
-
-    Args:
-        file: 음성 파일
-        gpt_model: GPT 모델 선택 (기본값: gpt-5-mini)
-        whisper_model: Whisper 모델 선택 (참고용, 서버 재시작 필요)
-        save_files: 결과를 파일로 저장할지 여부 (기본값: True)
-        return_file: True이면 회의록 텍스트 파일로 응답, False이면 JSON으로 응답 (기본값: False)
-
-    Returns:
-        JSON 응답 또는 텍스트 파일 다운로드
     """
+    # 사용량 한도 확인 (STT + 요약 모두)
+    check_usage_limit(db, current_user.id, "stt")
+    check_usage_limit(db, current_user.id, "summarize")
+
     # 파일 확장자 확인
     allowed_extensions = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac']
     file_ext = os.path.splitext(file.filename)[1].lower()
@@ -463,11 +581,17 @@ async def transcribe_audio(
         transcript = await stt_processor.transcribe(temp_file_path)
         print(f"변환 완료 (길이: {len(transcript)}자)")
 
+        # 사용량 기록 (STT)
+        crud.create_usage_record(db, current_user.id, "stt", cost=0.0)
+
         # 2단계: GPT 요약
         print(f"GPT ({gpt_model.value})로 회의록 작성 중...")
         result = await gpt_summarizer.summarize(transcript, model=gpt_model.value)
         summary = result["summary"]
         print("회의록 작성 완료!")
+
+        # 사용량 기록 (요약)
+        crud.create_usage_record(db, current_user.id, "summarize", cost=0.0)
 
         # 3단계: 파일 저장 또는 응답 준비
         summary_path = os.path.join(OUTPUT_DIR, f"meeting_minutes_{timestamp}_{unique_id}.txt")
@@ -529,6 +653,8 @@ async def transcribe_audio(
 
         return JSONResponse(content=response_data)
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"오류 발생: {str(e)}")
         raise HTTPException(status_code=500, detail=f"처리 중 오류 발생: {str(e)}")
@@ -573,33 +699,42 @@ async def cleanup_files(days: int = 7):
 
 
 # ============================================
-# 데이터베이스 조회 엔드포인트
+# 데이터베이스 조회 엔드포인트 (인증 필요)
 # ============================================
 
 @app.get("/transcripts")
 async def get_transcripts(
     skip: int = 0,
     limit: int = 20,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """모든 STT 변환 레코드 조회 (페이지네이션)"""
-    records = crud.get_all_transcript_records(db, skip=skip, limit=limit)
+    """사용자의 모든 STT 변환 레코드 조회 (페이지네이션)"""
+    records = crud.get_all_transcript_records(db, current_user.id, skip=skip, limit=limit)
     return {"success": True, "count": len(records), "records": records}
 
 
 @app.get("/transcripts/{transcript_id}")
-async def get_transcript(transcript_id: int, db: Session = Depends(get_db)):
-    """특정 STT 레코드 조회"""
-    record = crud.get_transcript_record(db, transcript_id)
+async def get_transcript(
+    transcript_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """특정 STT 레코드 조회 (소유권 확인)"""
+    record = crud.get_transcript_record(db, transcript_id, current_user.id)
     if not record:
         raise HTTPException(status_code=404, detail="Transcript 레코드를 찾을 수 없습니다")
     return {"success": True, "record": record}
 
 
 @app.get("/transcripts/{transcript_id}/summaries")
-async def get_transcript_summaries(transcript_id: int, db: Session = Depends(get_db)):
-    """특정 STT 레코드에 대한 모든 요약 조회"""
-    summaries = crud.get_summaries_by_transcript(db, transcript_id)
+async def get_transcript_summaries(
+    transcript_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """특정 STT 레코드에 대한 모든 요약 조회 (소유권 확인)"""
+    summaries = crud.get_summaries_by_transcript(db, transcript_id, current_user.id)
     return {"success": True, "count": len(summaries), "summaries": summaries}
 
 
@@ -607,17 +742,22 @@ async def get_transcript_summaries(transcript_id: int, db: Session = Depends(get
 async def get_summaries(
     skip: int = 0,
     limit: int = 20,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """모든 요약 레코드 조회 (페이지네이션)"""
-    records = crud.get_all_summary_records(db, skip=skip, limit=limit)
+    """사용자의 모든 요약 레코드 조회 (페이지네이션)"""
+    records = crud.get_all_summary_records(db, current_user.id, skip=skip, limit=limit)
     return {"success": True, "count": len(records), "records": records}
 
 
 @app.get("/summaries/{summary_id}")
-async def get_summary(summary_id: int, db: Session = Depends(get_db)):
-    """특정 요약 레코드 조회"""
-    record = crud.get_summary_record(db, summary_id)
+async def get_summary(
+    summary_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """특정 요약 레코드 조회 (소유권 확인)"""
+    record = crud.get_summary_record(db, summary_id, current_user.id)
     if not record:
         raise HTTPException(status_code=404, detail="Summary 레코드를 찾을 수 없습니다")
     return {"success": True, "record": record}
@@ -628,10 +768,11 @@ async def search_transcripts(
     keyword: str,
     skip: int = 0,
     limit: int = 20,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """키워드로 STT 레코드 검색"""
-    records = crud.search_transcript_records(db, keyword, skip=skip, limit=limit)
+    """키워드로 사용자의 STT 레코드 검색"""
+    records = crud.search_transcript_records(db, current_user.id, keyword, skip=skip, limit=limit)
     return {"success": True, "count": len(records), "records": records}
 
 
@@ -640,10 +781,11 @@ async def search_summaries(
     keyword: str,
     skip: int = 0,
     limit: int = 20,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """키워드로 요약 레코드 검색"""
-    records = crud.search_summary_records(db, keyword, skip=skip, limit=limit)
+    """키워드로 사용자의 요약 레코드 검색"""
+    records = crud.search_summary_records(db, current_user.id, keyword, skip=skip, limit=limit)
     return {"success": True, "count": len(records), "records": records}
 
 
@@ -662,12 +804,14 @@ app.mount("/images", StaticFiles(directory="frontend/images"), name="images")
 
 @app.get("/app", response_class=HTMLResponse)
 async def serve_frontend():
-    """프론트엔드 메인 페이지 서빙 (캐시 버스팅 적용)"""
+    """프론트엔드 메인 페이지 서빙 (캐시 버스팅 + Google Client ID 주입)"""
     with open("frontend/index.html", "r", encoding="utf-8") as f:
         html = f.read()
     # CSS/JS 파일에 버전 쿼리스트링 추가하여 배포 시 캐시 자동 무효화
     html = html.replace('href="css/style.css"', f'href="css/style.css?v={_CACHE_VERSION}"')
     html = html.replace('src="js/app.js"', f'src="js/app.js?v={_CACHE_VERSION}"')
+    # Google Client ID 주입
+    html = html.replace('__GOOGLE_CLIENT_ID__', os.getenv("GOOGLE_CLIENT_ID", ""))
     return HTMLResponse(content=html)
 
 

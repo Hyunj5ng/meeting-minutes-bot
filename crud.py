@@ -1,9 +1,111 @@
 """
 CRUD (Create, Read, Update, Delete) 작업
 """
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
-from models import TranscriptRecord, SummaryRecord
+from sqlalchemy import func as sa_func
+from models import TranscriptRecord, SummaryRecord, User, UsageRecord
 from typing import List, Optional
+
+
+# ========== User CRUD ==========
+
+def get_user_by_google_id(db: Session, google_id: str) -> Optional[User]:
+    """Google ID로 사용자 조회"""
+    return db.query(User).filter(User.google_id == google_id).first()
+
+
+def create_user(
+    db: Session,
+    google_id: str,
+    email: str,
+    name: str = "",
+    picture: str = "",
+) -> User:
+    """새 사용자 생성"""
+    user = User(
+        google_id=google_id,
+        email=email,
+        name=name,
+        picture=picture,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def update_user_login(
+    db: Session,
+    user: User,
+    name: str = "",
+    picture: str = "",
+) -> User:
+    """로그인 시 사용자 정보 갱신"""
+    user.name = name or user.name
+    user.picture = picture or user.picture
+    user.last_login_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+# ========== UsageRecord CRUD ==========
+
+def create_usage_record(
+    db: Session,
+    user_id: int,
+    action_type: str,
+    cost: float = 0.0,
+) -> UsageRecord:
+    """사용량 기록 생성"""
+    record = UsageRecord(
+        user_id=user_id,
+        action_type=action_type,
+        cost=cost,
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+def get_usage_count(
+    db: Session,
+    user_id: int,
+    action_type: str,
+    period: str = "daily",
+) -> int:
+    """특정 기간 내 사용 횟수 조회 (daily 또는 monthly)"""
+    now = datetime.now(timezone.utc)
+    if period == "daily":
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    else:  # monthly
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    return db.query(sa_func.count(UsageRecord.id)).filter(
+        UsageRecord.user_id == user_id,
+        UsageRecord.action_type == action_type,
+        UsageRecord.created_at >= start,
+    ).scalar() or 0
+
+
+def get_usage_cost(
+    db: Session,
+    user_id: int,
+    period: str = "monthly",
+) -> float:
+    """특정 기간 내 총 비용 조회"""
+    now = datetime.now(timezone.utc)
+    if period == "daily":
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    return db.query(sa_func.coalesce(sa_func.sum(UsageRecord.cost), 0.0)).filter(
+        UsageRecord.user_id == user_id,
+        UsageRecord.created_at >= start,
+    ).scalar() or 0.0
 
 
 # ========== TranscriptRecord CRUD ==========
@@ -13,6 +115,7 @@ def create_transcript_record(
     filename: str,
     file_size: int,
     transcript: str,
+    user_id: Optional[int] = None,
     whisper_model: str = "base",
     audio_duration: Optional[float] = None,
     stt_processing_time: Optional[float] = None,
@@ -24,6 +127,7 @@ def create_transcript_record(
 ) -> TranscriptRecord:
     """새 STT 변환 레코드 생성"""
     record = TranscriptRecord(
+        user_id=user_id,
         filename=filename,
         file_size=file_size,
         audio_duration=audio_duration,
@@ -42,25 +146,34 @@ def create_transcript_record(
     return record
 
 
-def get_transcript_record(db: Session, transcript_id: int) -> Optional[TranscriptRecord]:
-    """특정 STT 레코드 조회"""
-    return db.query(TranscriptRecord).filter(TranscriptRecord.id == transcript_id).first()
+def get_transcript_record(db: Session, transcript_id: int, user_id: int) -> Optional[TranscriptRecord]:
+    """특정 STT 레코드 조회 (소유권 확인)"""
+    return db.query(TranscriptRecord).filter(
+        TranscriptRecord.id == transcript_id,
+        TranscriptRecord.user_id == user_id,
+    ).first()
 
 
 def get_all_transcript_records(
     db: Session,
+    user_id: int,
     skip: int = 0,
     limit: int = 100
 ) -> List[TranscriptRecord]:
-    """모든 STT 레코드 조회 (페이지네이션)"""
-    return db.query(TranscriptRecord).order_by(
+    """사용자의 모든 STT 레코드 조회 (페이지네이션)"""
+    return db.query(TranscriptRecord).filter(
+        TranscriptRecord.user_id == user_id,
+    ).order_by(
         TranscriptRecord.created_at.desc()
     ).offset(skip).limit(limit).all()
 
 
-def delete_transcript_record(db: Session, transcript_id: int) -> bool:
-    """STT 레코드 삭제 (cascade로 관련 summary도 삭제됨)"""
-    record = db.query(TranscriptRecord).filter(TranscriptRecord.id == transcript_id).first()
+def delete_transcript_record(db: Session, transcript_id: int, user_id: int) -> bool:
+    """STT 레코드 삭제 (소유권 확인, cascade로 관련 summary도 삭제됨)"""
+    record = db.query(TranscriptRecord).filter(
+        TranscriptRecord.id == transcript_id,
+        TranscriptRecord.user_id == user_id,
+    ).first()
     if record:
         db.delete(record)
         db.commit()
@@ -70,13 +183,15 @@ def delete_transcript_record(db: Session, transcript_id: int) -> bool:
 
 def search_transcript_records(
     db: Session,
+    user_id: int,
     keyword: str,
     skip: int = 0,
     limit: int = 100
 ) -> List[TranscriptRecord]:
-    """키워드로 STT 레코드 검색 (파일명 또는 내용)"""
+    """키워드로 사용자의 STT 레코드 검색 (파일명 또는 내용)"""
     search_pattern = f"%{keyword}%"
     return db.query(TranscriptRecord).filter(
+        TranscriptRecord.user_id == user_id,
         (TranscriptRecord.filename.ilike(search_pattern)) |
         (TranscriptRecord.transcript.ilike(search_pattern))
     ).order_by(TranscriptRecord.created_at.desc()).offset(skip).limit(limit).all()
@@ -110,35 +225,46 @@ def create_summary_record(
     return record
 
 
-def get_summary_record(db: Session, summary_id: int) -> Optional[SummaryRecord]:
-    """특정 요약 레코드 조회"""
-    return db.query(SummaryRecord).filter(SummaryRecord.id == summary_id).first()
+def get_summary_record(db: Session, summary_id: int, user_id: int) -> Optional[SummaryRecord]:
+    """특정 요약 레코드 조회 (transcript 소유권 확인)"""
+    return db.query(SummaryRecord).join(TranscriptRecord).filter(
+        SummaryRecord.id == summary_id,
+        TranscriptRecord.user_id == user_id,
+    ).first()
 
 
 def get_summaries_by_transcript(
     db: Session,
-    transcript_id: int
+    transcript_id: int,
+    user_id: int,
 ) -> List[SummaryRecord]:
-    """특정 STT 레코드에 대한 모든 요약 조회"""
-    return db.query(SummaryRecord).filter(
-        SummaryRecord.transcript_id == transcript_id
+    """특정 STT 레코드에 대한 모든 요약 조회 (소유권 확인)"""
+    return db.query(SummaryRecord).join(TranscriptRecord).filter(
+        SummaryRecord.transcript_id == transcript_id,
+        TranscriptRecord.user_id == user_id,
     ).order_by(SummaryRecord.created_at.desc()).all()
 
 
 def get_all_summary_records(
     db: Session,
+    user_id: int,
     skip: int = 0,
     limit: int = 100
 ) -> List[SummaryRecord]:
-    """모든 요약 레코드 조회 (페이지네이션)"""
-    return db.query(SummaryRecord).order_by(
+    """사용자의 모든 요약 레코드 조회 (페이지네이션)"""
+    return db.query(SummaryRecord).join(TranscriptRecord).filter(
+        TranscriptRecord.user_id == user_id,
+    ).order_by(
         SummaryRecord.created_at.desc()
     ).offset(skip).limit(limit).all()
 
 
-def delete_summary_record(db: Session, summary_id: int) -> bool:
-    """요약 레코드 삭제"""
-    record = db.query(SummaryRecord).filter(SummaryRecord.id == summary_id).first()
+def delete_summary_record(db: Session, summary_id: int, user_id: int) -> bool:
+    """요약 레코드 삭제 (소유권 확인)"""
+    record = db.query(SummaryRecord).join(TranscriptRecord).filter(
+        SummaryRecord.id == summary_id,
+        TranscriptRecord.user_id == user_id,
+    ).first()
     if record:
         db.delete(record)
         db.commit()
@@ -148,12 +274,14 @@ def delete_summary_record(db: Session, summary_id: int) -> bool:
 
 def search_summary_records(
     db: Session,
+    user_id: int,
     keyword: str,
     skip: int = 0,
     limit: int = 100
 ) -> List[SummaryRecord]:
-    """키워드로 요약 레코드 검색"""
+    """키워드로 사용자의 요약 레코드 검색"""
     search_pattern = f"%{keyword}%"
-    return db.query(SummaryRecord).filter(
+    return db.query(SummaryRecord).join(TranscriptRecord).filter(
+        TranscriptRecord.user_id == user_id,
         SummaryRecord.summary.ilike(search_pattern)
     ).order_by(SummaryRecord.created_at.desc()).offset(skip).limit(limit).all()

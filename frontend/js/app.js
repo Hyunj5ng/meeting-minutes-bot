@@ -9,24 +9,212 @@ let resultData = null;
 let audioDuration = 0; // 오디오 길이 (초)
 let summaryHistory = []; // 여러 요약 결과 저장
 
-// DOM 요소
-const uploadArea = document.getElementById('uploadArea');
-const fileInput = document.getElementById('fileInput');
-const fileInfo = document.getElementById('fileInfo');
-const fileName = document.getElementById('fileName');
-const fileSize = document.getElementById('fileSize');
-const removeFileBtn = document.getElementById('removeFile');
-const convertBtn = document.getElementById('convertBtn');
-const progressSection = document.getElementById('progressSection');
-const summaryProgressSection = document.getElementById('summaryProgressSection');
-const resultSection = document.getElementById('resultSection');
-const downloadBtn = document.getElementById('downloadBtn');
-const resetBtn = document.getElementById('resetBtn');
+// 인증 상태
+let currentUser = null;
+let accessToken = null;
+
+// DOM 요소 (로그인 후 초기화)
+let uploadArea, fileInput, fileInfo, fileName, fileSize;
+let removeFileBtn, convertBtn, progressSection, summaryProgressSection;
+let resultSection, downloadBtn, resetBtn;
 
 // 초기화
 document.addEventListener('DOMContentLoaded', () => {
-    setupEventListeners();
+    initAuth();
 });
+
+// ============================================
+// 인증 관련
+// ============================================
+
+function initAuth() {
+    accessToken = localStorage.getItem('access_token');
+    if (accessToken) {
+        verifyToken();
+    } else {
+        showLoginSection();
+    }
+}
+
+function initGoogleSignIn() {
+    const clientId = document.querySelector('meta[name="google-client-id"]')?.content;
+    if (!clientId) {
+        console.error('Google Client ID가 설정되지 않았습니다');
+        return;
+    }
+
+    google.accounts.id.initialize({
+        client_id: clientId,
+        callback: handleGoogleSignIn,
+    });
+    google.accounts.id.renderButton(
+        document.getElementById('googleSignInBtn'),
+        { theme: 'outline', size: 'large', text: 'signin_with', locale: 'ko' }
+    );
+}
+
+async function handleGoogleSignIn(response) {
+    try {
+        const formData = new FormData();
+        formData.append('token', response.credential);
+
+        const res = await fetch(`${API_BASE_URL}/auth/google`, {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.detail || '로그인에 실패했습니다');
+        }
+
+        const data = await res.json();
+        accessToken = data.access_token;
+        currentUser = data.user;
+        localStorage.setItem('access_token', accessToken);
+
+        showMainApp();
+    } catch (error) {
+        console.error('Google 로그인 오류:', error);
+        alert('로그인에 실패했습니다: ' + error.message);
+    }
+}
+
+async function verifyToken() {
+    try {
+        const res = await fetch(`${API_BASE_URL}/auth/me`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            currentUser = data.user;
+            showMainApp();
+        } else {
+            localStorage.removeItem('access_token');
+            accessToken = null;
+            showLoginSection();
+        }
+    } catch {
+        localStorage.removeItem('access_token');
+        accessToken = null;
+        showLoginSection();
+    }
+}
+
+function logout() {
+    localStorage.removeItem('access_token');
+    accessToken = null;
+    currentUser = null;
+    if (typeof google !== 'undefined' && google.accounts) {
+        google.accounts.id.disableAutoSelect();
+    }
+    showLoginSection();
+}
+
+function showLoginSection() {
+    document.getElementById('loginSection').style.display = 'flex';
+    document.getElementById('appHeader').style.display = 'none';
+    document.getElementById('mainContent').style.display = 'none';
+
+    // Google Sign-In 버튼 초기화 (GSI 스크립트 로드 대기)
+    if (typeof google !== 'undefined' && google.accounts) {
+        initGoogleSignIn();
+    } else {
+        // GSI 스크립트가 아직 로드되지 않은 경우 대기
+        const checkGsi = setInterval(() => {
+            if (typeof google !== 'undefined' && google.accounts) {
+                clearInterval(checkGsi);
+                initGoogleSignIn();
+            }
+        }, 100);
+    }
+}
+
+function showMainApp() {
+    document.getElementById('loginSection').style.display = 'none';
+    document.getElementById('appHeader').style.display = 'block';
+    document.getElementById('mainContent').style.display = 'flex';
+
+    // 유저 정보 표시
+    if (currentUser) {
+        document.getElementById('userName').textContent = currentUser.name || currentUser.email;
+        const pictureEl = document.getElementById('userPicture');
+        if (currentUser.picture) {
+            pictureEl.src = currentUser.picture;
+            pictureEl.style.display = 'block';
+        } else {
+            pictureEl.style.display = 'none';
+        }
+    }
+
+    // DOM 요소 초기화
+    initDomElements();
+    setupEventListeners();
+    fetchUsageInfo();
+}
+
+// 인증된 fetch 래퍼
+async function authFetch(url, options = {}) {
+    if (!options.headers) {
+        options.headers = {};
+    }
+    // FormData인 경우 Content-Type을 설정하지 않음 (브라우저가 boundary 포함하여 자동 설정)
+    if (accessToken) {
+        options.headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+
+    const res = await fetch(url, options);
+
+    if (res.status === 401) {
+        logout();
+        throw new Error('세션이 만료되었습니다. 다시 로그인해주세요.');
+    }
+
+    if (res.status === 429) {
+        const error = await res.json();
+        throw new Error(error.detail || '사용량 한도를 초과했습니다.');
+    }
+
+    return res;
+}
+
+async function fetchUsageInfo() {
+    try {
+        const res = await authFetch(`${API_BASE_URL}/usage`);
+        if (!res.ok) return;
+
+        const data = await res.json();
+        const usageBar = document.getElementById('usageBar');
+        usageBar.style.display = 'flex';
+
+        document.getElementById('dailyStt').textContent = data.stt.daily.used;
+        document.getElementById('dailySttLimit').textContent = data.stt.daily.limit;
+        document.getElementById('dailySummarize').textContent = data.summarize.daily.used;
+        document.getElementById('dailySummarizeLimit').textContent = data.summarize.daily.limit;
+    } catch (error) {
+        console.warn('사용량 조회 실패:', error);
+    }
+}
+
+// ============================================
+// DOM 및 이벤트 초기화
+// ============================================
+
+function initDomElements() {
+    uploadArea = document.getElementById('uploadArea');
+    fileInput = document.getElementById('fileInput');
+    fileInfo = document.getElementById('fileInfo');
+    fileName = document.getElementById('fileName');
+    fileSize = document.getElementById('fileSize');
+    removeFileBtn = document.getElementById('removeFile');
+    convertBtn = document.getElementById('convertBtn');
+    progressSection = document.getElementById('progressSection');
+    summaryProgressSection = document.getElementById('summaryProgressSection');
+    resultSection = document.getElementById('resultSection');
+    downloadBtn = document.getElementById('downloadBtn');
+    resetBtn = document.getElementById('resetBtn');
+}
 
 // 이벤트 리스너 설정
 function setupEventListeners() {
@@ -44,6 +232,9 @@ function setupEventListeners() {
     // 결과 관련
     downloadBtn.addEventListener('click', downloadResult);
     resetBtn.addEventListener('click', reset);
+
+    // 로그아웃
+    document.getElementById('logoutBtn').addEventListener('click', logout);
 
     // 탭 전환
     const tabs = document.querySelectorAll('.tab');
@@ -225,10 +416,9 @@ async function handleConvert() {
         updateProgress(20);
 
         // 서버 처리 중 천천히 진행 (예상 시간에 맞춰서 95%까지 진행)
-        // 실제 처리 시간보다 약간 여유를 두기 위해 예상 시간의 110%를 duration으로 사용
         const progressInterval = simulateSlowStepProgress(2, 2, 95, estimatedSeconds * 1000 * 1.1);
 
-        const response = await fetch(`${API_BASE_URL}/transcribe-only`, {
+        const response = await authFetch(`${API_BASE_URL}/transcribe-only`, {
             method: 'POST',
             body: formData
         });
@@ -273,6 +463,9 @@ async function handleConvert() {
         // 자동으로 회의록 생성 시작
         await handleSummarize();
 
+        // 사용량 갱신
+        fetchUsageInfo();
+
     } catch (error) {
         console.error('Error:', error);
         alert('오류가 발생했습니다: ' + error.message);
@@ -310,7 +503,7 @@ async function handleSummarize() {
         const progressInterval = simulateSummaryStepProgress(20, 80, 100);
 
         // API 호출
-        const response = await fetch(`${API_BASE_URL}/summarize`, {
+        const response = await authFetch(`${API_BASE_URL}/summarize`, {
             method: 'POST',
             body: formData
         });
@@ -572,7 +765,7 @@ async function downloadResult() {
         downloadBtn.disabled = true;
 
         // API 호출
-        const response = await fetch(`${API_BASE_URL}/summarize`, {
+        const response = await authFetch(`${API_BASE_URL}/summarize`, {
             method: 'POST',
             body: formData
         });
@@ -599,7 +792,6 @@ async function downloadResult() {
     } catch (error) {
         console.error('Download error:', error);
         alert('다운로드 중 오류가 발생했습니다: ' + error.message);
-        downloadBtn.innerHTML = originalText;
         downloadBtn.disabled = false;
     }
 }
@@ -611,7 +803,7 @@ function reset() {
     resultData = null;
     audioDuration = 0;
     summaryHistory = [];
-    fileInput.value = '';
+    if (fileInput) fileInput.value = '';
 
     document.querySelector('.upload-section').style.display = 'block';
     progressSection.style.display = 'none';
