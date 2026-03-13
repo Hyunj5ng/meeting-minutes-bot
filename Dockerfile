@@ -16,7 +16,7 @@ RUN pip install -r requirements.txt
 COPY . .
 
 # Create necessary directories
-RUN mkdir -p uploads output
+RUN mkdir -p uploads output chroma_data
 
 EXPOSE 8000
 

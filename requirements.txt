@@ -17,3 +17,6 @@ boto3
 google-auth
 requests
 python-jose[cryptography]
+
+# RAG
+chromadb

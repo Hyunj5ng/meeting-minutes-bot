@@ -296,6 +296,25 @@ def delete_summary_record(db: Session, summary_id: int, user_id: int) -> bool:
     return False
 
 
+def update_summary_text(
+    db: Session,
+    summary_id: int,
+    user_id: int,
+    new_summary: str,
+) -> Optional[SummaryRecord]:
+    """요약 텍스트 업데이트 (소유권 확인)"""
+    record = db.query(SummaryRecord).join(TranscriptRecord).filter(
+        SummaryRecord.id == summary_id,
+        TranscriptRecord.user_id == user_id,
+    ).first()
+    if not record:
+        return None
+    record.summary = new_summary
+    db.commit()
+    db.refresh(record)
+    return record
+
+
 def search_summary_records(
     db: Session,
     user_id: int,

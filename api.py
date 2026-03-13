@@ -1,15 +1,18 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends, Body
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from enum import Enum
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 import os
 import aiofiles
 from datetime import datetime
 from stt_module import STTProcessor
 from gpt_summarizer import GPTSummarizer
+from email_service import send_summary_email
+from rag_service import RAGService
 import uuid
 import time
 import boto3
@@ -19,6 +22,14 @@ from database import get_db, engine, Base
 from models import TranscriptRecord, SummaryRecord, User
 from auth import get_current_user, verify_google_token, create_access_token
 import crud
+
+
+# ============================================
+# Pydantic 모델
+# ============================================
+
+class SummaryUpdateRequest(BaseModel):
+    summary: str
 
 
 # API 모델별 가격표 (USD per 1M tokens, Whisper는 USD per minute)
@@ -101,6 +112,7 @@ class WhisperModel(str, Enum):
 # 전역 변수로 모델 저장
 stt_processor = None
 gpt_summarizer = None
+rag_service = None
 
 # 업로드 및 출력 디렉토리
 UPLOAD_DIR = "uploads"
@@ -149,11 +161,12 @@ def upload_file_to_s3(local_path: str, key: str, content_type: str = "text/plain
 async def lifespan(app: FastAPI):
     """서버 시작/종료 시 실행되는 이벤트"""
     # 시작 시
-    global stt_processor, gpt_summarizer
+    global stt_processor, gpt_summarizer, rag_service
 
     print("모델 초기화 중...")
     stt_processor = STTProcessor()
     gpt_summarizer = GPTSummarizer()
+    rag_service = RAGService()
     print("모델 초기화 완료!")
 
     yield
@@ -424,10 +437,26 @@ async def summarize_transcript(
         context["keywords"] = transcript_record.keywords
 
     try:
+        # RAG: 과거 관련 회의록 검색
+        past_context = []
+        if rag_service:
+            try:
+                past_context = await rag_service.retrieve_context(
+                    user_id=current_user.id,
+                    query_text=transcript[:2000],
+                )
+                if past_context:
+                    print(f"RAG: 과거 회의록 {len(past_context)}개 검색됨")
+            except Exception as e:
+                print(f"RAG 검색 실패 (무시): {e}")
+
         # GPT 요약 - 시간 측정
         print(f"GPT ({gpt_model.value})로 회의록 작성 중...")
         start_time = time.time()
-        result = await gpt_summarizer.summarize(transcript, model=gpt_model.value, context=context or None)
+        result = await gpt_summarizer.summarize(
+            transcript, model=gpt_model.value, context=context or None,
+            past_context=past_context or None,
+        )
         gpt_time = time.time() - start_time
 
         summary = result["summary"]
@@ -448,6 +477,23 @@ async def summarize_transcript(
             llm_cost=llm_cost
         )
         print(f"DB 저장 완료 (Summary ID: {summary_record.id}, Transcript ID: {transcript_id})")
+
+        # RAG: 새 요약 임베딩 저장
+        if rag_service:
+            try:
+                metadata = {}
+                if transcript_record.meeting_title:
+                    metadata["meeting_title"] = transcript_record.meeting_title
+                if transcript_record.project_name:
+                    metadata["project_name"] = transcript_record.project_name
+                await rag_service.embed_and_store(
+                    user_id=current_user.id,
+                    summary_id=summary_record.id,
+                    summary_text=summary,
+                    metadata=metadata,
+                )
+            except Exception as e:
+                print(f"RAG 저장 실패 (무시): {e}")
 
         # 파일 저장 또는 응답 준비
         summary_path = os.path.join(OUTPUT_DIR, f"meeting_minutes_{timestamp}_{unique_id}.txt")
@@ -738,6 +784,46 @@ async def get_summary(
     if not record:
         raise HTTPException(status_code=404, detail="Summary 레코드를 찾을 수 없습니다")
     return {"success": True, "record": record}
+
+
+@app.put("/summaries/{summary_id}")
+async def update_summary(
+    summary_id: int,
+    body: SummaryUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """요약 텍스트 편집 (소유권 확인)"""
+    record = crud.update_summary_text(db, summary_id, current_user.id, body.summary)
+    if not record:
+        raise HTTPException(status_code=404, detail="Summary 레코드를 찾을 수 없습니다")
+    return {"success": True, "summary_id": record.id, "summary": record.summary}
+
+
+@app.post("/summaries/{summary_id}/send-email")
+async def send_email(
+    summary_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """요약 내용을 사용자 이메일로 발송 (소유권 확인)"""
+    record = crud.get_summary_record(db, summary_id, current_user.id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Summary 레코드를 찾을 수 없습니다")
+
+    # 회의 제목 가져오기
+    transcript = record.transcript
+    meeting_title = transcript.meeting_title or "회의록"
+    subject = f"[Summarying!] {meeting_title}"
+
+    try:
+        await send_summary_email(current_user.email, subject, record.summary)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"이메일 발송 실패: {e}")
+
+    return {"success": True, "message": f"{current_user.email}로 이메일을 발송했습니다"}
 
 
 @app.get("/search/transcripts")

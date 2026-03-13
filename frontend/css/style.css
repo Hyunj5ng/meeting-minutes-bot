@@ -1013,3 +1013,31 @@ body {
         margin: 0 1rem;
     }
 }
+
+/* 편집 영역 (F3) */
+.edit-textarea {
+    width: 100%;
+    min-height: 300px;
+    padding: 1rem;
+    font-family: 'SF Mono', 'Consolas', monospace;
+    font-size: 0.875rem;
+    line-height: 1.6;
+    border: 2px solid var(--border-color);
+    border-radius: 0.5rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    resize: vertical;
+}
+
+.edit-textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
+}
+
+.edit-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 12px;
+}

@@ -32,7 +32,7 @@ class GPTSummarizer:
             self.anthropic_client = None
             print("경고: ANTHROPIC_API_KEY가 설정되지 않았습니다.")
 
-    async def summarize(self, text, model="gpt-5-mini", context=None):
+    async def summarize(self, text, model="gpt-5-mini", context=None, past_context=None):
         """
         회의 내용을 LLM을 사용하여 정리된 회의록으로 변환합니다.
 
@@ -40,24 +40,25 @@ class GPTSummarizer:
             text: STT로 변환된 원본 텍스트
             model: 사용할 모델
             context: 회의 맥락 정보 dict (project_name, meeting_title, attendees, keywords)
+            past_context: RAG로 검색된 과거 회의록 요약 리스트
 
         Returns:
             dict: {"summary": str, "input_tokens": int, "output_tokens": int}
         """
         # Claude 모델인지 확인
         if model in CLAUDE_MODELS:
-            return await self._summarize_with_claude(text, model, context)
+            return await self._summarize_with_claude(text, model, context, past_context)
         else:
-            return await self._summarize_with_openai(text, model, context)
+            return await self._summarize_with_openai(text, model, context, past_context)
 
-    async def _summarize_with_openai(self, text, model, context=None):
+    async def _summarize_with_openai(self, text, model, context=None, past_context=None):
         """OpenAI GPT로 요약 (비동기)"""
         if not self.openai_client:
             raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다.")
 
         print(f"OpenAI {model}을 사용하여 회의록 작성 중...")
 
-        prompt = self._get_prompt(text, context)
+        prompt = self._get_prompt(text, context, past_context)
 
         api_params = {
             "model": model,
@@ -87,14 +88,14 @@ class GPTSummarizer:
             "output_tokens": output_tokens
         }
 
-    async def _summarize_with_claude(self, text, model, context=None):
+    async def _summarize_with_claude(self, text, model, context=None, past_context=None):
         """Anthropic Claude로 요약 (비동기)"""
         if not self.anthropic_client:
             raise ValueError("ANTHROPIC_API_KEY가 설정되지 않았습니다.")
 
         print(f"Claude {model}을 사용하여 회의록 작성 중...")
 
-        prompt = self._get_prompt(text, context)
+        prompt = self._get_prompt(text, context, past_context)
 
         response = await self.anthropic_client.messages.create(
             model=model,
@@ -116,7 +117,7 @@ class GPTSummarizer:
             "output_tokens": output_tokens
         }
 
-    def _get_prompt(self, text, context=None):
+    def _get_prompt(self, text, context=None, past_context=None):
         """공통 프롬프트 생성"""
         # 맥락 정보가 있으면 프롬프트 상단에 삽입
         context_section = ""
@@ -133,7 +134,19 @@ class GPTSummarizer:
             if lines:
                 context_section = "회의 정보:\n" + "\n".join(lines) + "\n\n위 맥락을 참고하여 회의록을 작성해주세요.\n\n"
 
-        return f"""{context_section}다음은 회의 중 녹음된 음성을 텍스트로 변환한 내용입니다.
+        # RAG: 과거 회의록 맥락 삽입
+        past_context_section = ""
+        if past_context:
+            past_items = []
+            for i, ctx in enumerate(past_context, 1):
+                past_items.append(f"--- 과거 회의록 {i} ---\n{ctx}")
+            past_context_section = (
+                "참고 맥락 (이전 회의록):\n"
+                + "\n\n".join(past_items)
+                + "\n\n위 과거 회의 내용을 참고하여, 연속성 있는 맥락으로 이번 회의록을 작성해주세요.\n\n"
+            )
+
+        return f"""{context_section}{past_context_section}다음은 회의 중 녹음된 음성을 텍스트로 변환한 내용입니다.
 이를 읽기 쉽고 체계적인 회의록으로 정리해주세요.
 
 다음 형식으로 작성해주세요:

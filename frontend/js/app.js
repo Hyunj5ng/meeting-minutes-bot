@@ -8,6 +8,8 @@ let transcriptData = null;
 let resultData = null;
 let audioDuration = 0; // 오디오 길이 (초)
 let summaryHistory = []; // 여러 요약 결과 저장
+let currentSummaryMarkdown = ''; // 현재 요약 마크다운 원본
+let isEditMode = false;
 
 // 인증 상태
 let currentUser = null;
@@ -716,6 +718,7 @@ function showResult(data) {
     });
 
     // 회의록을 마크다운으로 렌더링
+    currentSummaryMarkdown = data.summary;
     const summaryElement = document.getElementById('summaryText');
     summaryElement.innerHTML = marked.parse(data.summary);
 
@@ -795,6 +798,107 @@ async function downloadResult() {
         console.error('Download error:', error);
         alert('다운로드 중 오류가 발생했습니다: ' + error.message);
         downloadBtn.disabled = false;
+    }
+}
+
+// ============================================
+// 편집 기능 (F3)
+// ============================================
+
+function toggleEditMode() {
+    if (isEditMode) {
+        cancelEdit();
+        return;
+    }
+
+    isEditMode = true;
+    document.querySelector('#summaryContent .content-box').style.display = 'none';
+    document.getElementById('editArea').style.display = 'block';
+    document.getElementById('editTextarea').value = currentSummaryMarkdown;
+    document.getElementById('editBtn').textContent = '편집 취소';
+}
+
+function cancelEdit() {
+    isEditMode = false;
+    document.querySelector('#summaryContent .content-box').style.display = 'block';
+    document.getElementById('editArea').style.display = 'none';
+    document.getElementById('editBtn').innerHTML = `
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M14.85 2.85a1.2 1.2 0 011.7 1.7L6.7 14.4l-3.4.85.85-3.4L14.85 2.85z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        편집`;
+}
+
+async function saveSummaryEdit() {
+    if (!resultData || !resultData.summaryId) return;
+
+    const newSummary = document.getElementById('editTextarea').value.trim();
+    if (!newSummary) {
+        alert('요약 내용을 입력해주세요.');
+        return;
+    }
+
+    const saveBtn = document.getElementById('saveEditBtn');
+    saveBtn.textContent = '저장 중...';
+    saveBtn.disabled = true;
+
+    try {
+        const res = await authFetch(`${API_BASE_URL}/summaries/${resultData.summaryId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ summary: newSummary }),
+        });
+
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.detail || '저장에 실패했습니다');
+        }
+
+        // 마크다운 재렌더링
+        currentSummaryMarkdown = newSummary;
+        resultData.summary = newSummary;
+        document.getElementById('summaryText').innerHTML = marked.parse(newSummary);
+
+        cancelEdit();
+    } catch (error) {
+        console.error('Save error:', error);
+        alert('저장 중 오류가 발생했습니다: ' + error.message);
+    } finally {
+        saveBtn.textContent = '저장';
+        saveBtn.disabled = false;
+    }
+}
+
+// ============================================
+// 이메일 발송 기능 (F4)
+// ============================================
+
+async function sendEmail() {
+    if (!resultData || !resultData.summaryId) return;
+
+    const btn = document.getElementById('sendEmailBtn');
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:2px;"></div> 발송 중...';
+    btn.disabled = true;
+
+    try {
+        const res = await authFetch(`${API_BASE_URL}/summaries/${resultData.summaryId}/send-email`, {
+            method: 'POST',
+        });
+
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.detail || '이메일 발송에 실패했습니다');
+        }
+
+        const data = await res.json();
+        alert(data.message);
+    } catch (error) {
+        console.error('Email error:', error);
+        alert('이메일 발송 중 오류가 발생했습니다: ' + error.message);
+    } finally {
+        btn.innerHTML = originalHTML;
+        btn.disabled = false;
     }
 }
 
