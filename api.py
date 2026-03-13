@@ -151,14 +151,6 @@ async def lifespan(app: FastAPI):
     # 시작 시
     global stt_processor, gpt_summarizer
 
-    # 데이터베이스 마이그레이션 실행
-    print("데이터베이스 마이그레이션 실행 중...")
-    from alembic.config import Config as AlembicConfig
-    from alembic import command as alembic_command
-    alembic_cfg = AlembicConfig("alembic.ini")
-    alembic_command.upgrade(alembic_cfg, "head")
-    print("데이터베이스 마이그레이션 완료!")
-
     print("모델 초기화 중...")
     stt_processor = STTProcessor()
     gpt_summarizer = GPTSummarizer()
