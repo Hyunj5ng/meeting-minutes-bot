@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 
 # revision identifiers, used by Alembic.
@@ -20,6 +21,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    existing_cols = [c['name'] for c in inspector.get_columns('usage_records')]
+    if 'duration_minutes' in existing_cols:
+        return
     with op.batch_alter_table('usage_records', schema=None) as batch_op:
         batch_op.add_column(sa.Column('duration_minutes', sa.Float(), nullable=True, comment='오디오 길이 (분, STT 전용)'))
 
