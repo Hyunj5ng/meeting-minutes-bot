@@ -10,17 +10,18 @@ from email.mime.multipart import MIMEMultipart
 
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 
 
 def _send_email_sync(to_email: str, subject: str, summary_text: str):
     """동기 이메일 발송 (asyncio.to_thread로 호출)"""
-    if not SMTP_USER or not SMTP_PASSWORD:
+    smtp_user = os.getenv("SMTP_USER", "")
+    smtp_password = os.getenv("SMTP_PASSWORD", "")
+
+    if not smtp_user or not smtp_password:
         raise ValueError("SMTP_USER 및 SMTP_PASSWORD 환경변수가 설정되지 않았습니다")
 
     msg = MIMEMultipart("alternative")
-    msg["From"] = SMTP_USER
+    msg["From"] = smtp_user
     msg["To"] = to_email
     msg["Subject"] = subject
 
@@ -43,7 +44,7 @@ def _send_email_sync(to_email: str, subject: str, summary_text: str):
 
     with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
         server.starttls()
-        server.login(SMTP_USER, SMTP_PASSWORD)
+        server.login(smtp_user, smtp_password)
         server.send_message(msg)
 
 
