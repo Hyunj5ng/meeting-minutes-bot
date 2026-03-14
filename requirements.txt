@@ -20,3 +20,6 @@ python-jose[cryptography]
 
 # RAG
 chromadb
+
+# Email
+resend

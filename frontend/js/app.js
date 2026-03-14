@@ -546,6 +546,26 @@ async function handleSummarize() {
         await new Promise(resolve => setTimeout(resolve, 500));
         showResult(resultData);
 
+        // 이메일 자동 발송 (체크박스 선택 시)
+        const autoEmail = document.getElementById('autoEmailCheckbox');
+        if (autoEmail && autoEmail.checked && resultData.summaryId) {
+            try {
+                const emailRes = await authFetch(`${API_BASE_URL}/summaries/${resultData.summaryId}/send-email`, {
+                    method: 'POST',
+                });
+                if (emailRes.ok) {
+                    const emailData = await emailRes.json();
+                    alert(emailData.message);
+                } else {
+                    const emailError = await emailRes.json();
+                    alert('이메일 발송 실패: ' + (emailError.detail || '알 수 없는 오류'));
+                }
+            } catch (emailErr) {
+                console.error('Auto email error:', emailErr);
+                alert('이메일 자동 발송 중 오류: ' + emailErr.message);
+            }
+        }
+
     } catch (error) {
         console.error('Error:', error);
         alert('오류가 발생했습니다: ' + error.message);
