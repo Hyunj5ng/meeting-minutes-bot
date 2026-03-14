@@ -811,10 +811,10 @@ async def send_email(
     if not record:
         raise HTTPException(status_code=404, detail="Summary 레코드를 찾을 수 없습니다")
 
-    # 회의 제목 가져오기
+    # 이메일 제목: 회의 제목 → 없으면 파일명
     transcript = record.transcript
-    meeting_title = transcript.meeting_title or "회의록"
-    subject = f"[Summarying!] {meeting_title}"
+    title = transcript.meeting_title or transcript.filename
+    subject = f"[Summarying!] {title}"
 
     try:
         await send_summary_email(current_user.email, subject, record.summary)
