@@ -28,7 +28,7 @@ def _send_email_sync(to_email: str, subject: str, summary_text: str):
 </html>"""
 
     resend.Emails.send({
-        "from": "Summarying! <onboarding@resend.dev>",
+        "from": "Summarying! <noreply@jonny.kim>",
         "to": [to_email],
         "subject": subject,
         "html": html_body,
