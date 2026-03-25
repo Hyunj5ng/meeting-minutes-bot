@@ -45,7 +45,7 @@ MODEL_PRICING = {
 }
 
 # 사용량 제한 (환경변수로 설정 가능) — STT 분(minutes) 단위만 적용
-DAILY_STT_LIMIT_MINUTES = int(os.getenv("DAILY_STT_LIMIT_MINUTES", "60"))
+DAILY_STT_LIMIT_MINUTES = int(os.getenv("DAILY_STT_LIMIT_MINUTES", "120"))
 MONTHLY_STT_LIMIT_MINUTES = int(os.getenv("MONTHLY_STT_LIMIT_MINUTES", "600"))
 
 
