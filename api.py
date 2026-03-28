@@ -480,7 +480,7 @@ async def transcribe_only(
 @app.post("/summarize")
 async def summarize_transcript(
     transcript_id: int = Form(..., description="Transcript 레코드 ID"),
-    gpt_model: GPTModel = Form(GPTModel.GPT_5_MINI, description="사용할 GPT 모델 선택"),
+    gpt_model: GPTModel = Form(GPTModel.CLAUDE_SONNET_46, description="사용할 GPT 모델 선택"),
     save_files: bool = Form(True, description="결과 파일을 서버에 저장할지 여부"),
     return_file: bool = Form(False, description="회의록을 텍스트 파일로 다운로드 (true 시 파일 응답, false 시 JSON 응답)"),
     current_user: User = Depends(get_current_user),
@@ -639,7 +639,7 @@ async def summarize_transcript(
 @app.post("/transcribe")
 async def transcribe_audio(
     file: UploadFile = File(..., description="음성 파일 (mp3, wav, m4a 등)"),
-    gpt_model: GPTModel = Form(GPTModel.GPT_5_MINI, description="사용할 GPT 모델 선택"),
+    gpt_model: GPTModel = Form(GPTModel.CLAUDE_SONNET_46, description="사용할 GPT 모델 선택"),
     whisper_model: WhisperModel = Form(WhisperModel.BASE, description="Whisper API는 단일 모델 사용 (값은 기록용)"),
     save_files: bool = Form(True, description="결과 파일을 서버에 저장할지 여부"),
     return_file: bool = Form(False, description="회의록을 텍스트 파일로 다운로드 (true 시 파일 응답, false 시 JSON 응답)"),
