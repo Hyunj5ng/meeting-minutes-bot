@@ -46,7 +46,7 @@ let accessToken = null;
 
 // DOM 요소 (로그인 후 초기화)
 let uploadArea, fileInput, fileInfo, fileName, fileSize;
-let removeFileBtn, convertBtn, resultSection, downloadBtn, resetBtn;
+let removeFileBtn, convertBtn, resultSection, copyBtn, resetBtn;
 
 // ============================================
 // RealisticProgress 클래스
@@ -337,7 +337,7 @@ function initDomElements() {
     removeFileBtn = document.getElementById('removeFile');
     convertBtn = document.getElementById('convertBtn');
     resultSection = document.getElementById('resultSection');
-    downloadBtn = document.getElementById('downloadBtn');
+    copyBtn = document.getElementById('copyBtn');
     resetBtn = document.getElementById('resetBtn');
 }
 
@@ -354,7 +354,7 @@ function setupEventListeners() {
     convertBtn.addEventListener('click', handleConvert);
 
     // 결과 관련
-    downloadBtn.addEventListener('click', downloadResult);
+    copyBtn.addEventListener('click', copyToClipboard);
     resetBtn.addEventListener('click', reset);
 
     // 로그아웃
@@ -731,47 +731,22 @@ function switchTab(tabName) {
     });
 }
 
-// 결과 다운로드
-async function downloadResult() {
-    if (!transcriptData || !resultData) return;
+// 클립보드 복사
+async function copyToClipboard() {
+    if (!currentSummaryMarkdown) return;
 
+    const originalHTML = copyBtn.innerHTML;
     try {
-        const formData = new FormData();
-        formData.append('transcript_id', transcriptData.transcriptId);
-        formData.append('gpt_model', document.getElementById('gptModelUpload').value);
-        formData.append('save_files', 'true');
-        formData.append('return_file', 'true');
-
-        const originalText = downloadBtn.innerHTML;
-        downloadBtn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:2px;"></div> 다운로드 중...';
-        downloadBtn.disabled = true;
-
-        const response = await authFetch(`${API_BASE_URL}/summarize`, {
-            method: 'POST',
-            body: formData
-        });
-
-        if (!response.ok) {
-            throw new Error('다운로드 중 오류가 발생했습니다');
-        }
-
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `meeting_minutes_${new Date().toISOString().slice(0, 10)}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-
-        downloadBtn.innerHTML = originalText;
-        downloadBtn.disabled = false;
-
+        await navigator.clipboard.writeText(currentSummaryMarkdown);
+        copyBtn.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M5 10L8 13L15 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            복사 완���!`;
+        setTimeout(() => { copyBtn.innerHTML = originalHTML; }, 2000);
     } catch (error) {
-        console.error('Download error:', error);
-        alert('다운로드 중 오류가 발생했습니다: ' + error.message);
-        downloadBtn.disabled = false;
+        console.error('Copy error:', error);
+        alert('복사에 실패했습니다.');
     }
 }
 
