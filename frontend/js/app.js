@@ -601,7 +601,8 @@ async function doSummarize() {
 
     setStepState(3, 'active');
     const gptModel = document.getElementById('gptModelUpload').value;
-    const modelName = gptModel.includes('claude') ? 'Claude' : 'GPT';
+    const modelSelect = document.getElementById('gptModelUpload');
+    const modelName = modelSelect.options[modelSelect.selectedIndex].text.split(' - ')[0];
 
     // 추정 시간 계산: base + rate * tokens/1000
     const transcriptLength = (transcriptData.transcript || '').length;
