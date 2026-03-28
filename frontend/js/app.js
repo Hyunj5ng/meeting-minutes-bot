@@ -2,16 +2,17 @@
 // 같은 서버에서 서빙되므로 상대 경로 사용
 const API_BASE_URL = '';
 
-// 실측 기반 고정 추정 상수
+// 실측 기반 고정 추정 상수 (회귀분석: time = base + rate * tokens/1000)
 const ESTIMATION = {
     stt_ratio: 0.016,  // 오디오 1초당 STT 처리 0.016초 (1분 오디오 ≈ 1초)
     summary: {
-        'claude-sonnet-4-5-20250929': 7.1,   // 1k 토큰당 초
-        'claude-haiku-4-5-20251001': 2.8,
-        'gpt-5.1': 7.5,
-        'gpt-5-mini': 19.0,
+        // { base: 고정 오버헤드(초), rate: 1k토큰당 추가시간(초) }
+        'claude-sonnet-4-5-20250929': { base: 25, rate: 1.2 },
+        'claude-haiku-4-5-20251001':  { base: 8,  rate: 1.1 },
+        'gpt-5.1':                    { base: 22, rate: 2.0 },
+        'gpt-5-mini':                 { base: 25, rate: 0.9 },
     },
-    summary_default: 7.0,  // 새 모델 fallback (1k 토큰당 초)
+    summary_default: { base: 25, rate: 1.5 },  // 새 모델 fallback
 };
 
 // 전역 변수
@@ -586,12 +587,12 @@ async function doSummarize() {
     const gptModel = document.getElementById('gptModelUpload').value;
     const modelName = gptModel.includes('claude') ? 'Claude' : 'GPT';
 
-    // 추정 시간 계산: transcript 길이 기반
+    // 추정 시간 계산: base + rate * tokens/1000
     const transcriptLength = (transcriptData.transcript || '').length;
-    // 한국어는 토큰:글자 비율이 약 1:1.5 정도, 대략 글자수/1500 ≈ 1k 토큰
+    // 한국어는 글자수/1500 ≈ 1k 토큰 (대략)
     const estimatedTokensK = transcriptLength / 1500;
-    const secPer1kTokens = ESTIMATION.summary[gptModel] || ESTIMATION.summary_default;
-    const estimatedMs = Math.max(estimatedTokensK * secPer1kTokens * 1000, 5000);
+    const coeff = ESTIMATION.summary[gptModel] || ESTIMATION.summary_default;
+    const estimatedMs = (coeff.base + coeff.rate * estimatedTokensK) * 1000;
 
     const summaryProgress = new RealisticProgress(estimatedMs, (pct, remaining) => {
         updateStepUI(3, pct, `${modelName}로 회의록 생성 중...`, formatEta(remaining));
