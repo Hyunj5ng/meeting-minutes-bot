@@ -2,17 +2,33 @@
 // 같은 서버에서 서빙되므로 상대 경로 사용
 const API_BASE_URL = '';
 
-// 실측 기반 고정 추정 상수 (회귀분석: time = base + rate * tokens/1000)
+// 추정 상수 (time = base + rate * tokens/1000, +30% 여유는 계산 시 적용)
 const ESTIMATION = {
     stt_ratio: 0.016,  // 오디오 1초당 STT 처리 0.016초 (1분 오디오 ≈ 1초)
     summary: {
         // { base: 고정 오버헤드(초), rate: 1k토큰당 추가시간(초) }
-        'claude-sonnet-4-5-20250929': { base: 25, rate: 1.2 },
-        'claude-haiku-4-5-20251001':  { base: 8,  rate: 1.1 },
-        'gpt-5.1':                    { base: 22, rate: 2.0 },
-        'gpt-5-mini':                 { base: 25, rate: 0.9 },
+        // OpenAI
+        'gpt-5.4-pro':          { base: 30, rate: 3.0 },  // 추론형, 느림
+        'gpt-5.4':              { base: 22, rate: 2.0 },
+        'gpt-5.4-nano':         { base: 15, rate: 0.8 },
+        // Anthropic
+        'claude-opus-4.6':      { base: 28, rate: 2.5 },
+        'claude-sonnet-4.6':    { base: 25, rate: 1.2 },
+        'claude-haiku-4.5':     { base: 8,  rate: 1.1 },
+        // Google
+        'gemini-2.5-pro':       { base: 20, rate: 2.0 },
+        'gemini-2.5-flash':     { base: 10, rate: 1.0 },
+        'gemini-2.5-flash-lite': { base: 5, rate: 0.5 },
+        // DeepSeek
+        'deepseek-r1':          { base: 25, rate: 2.5 },  // 추론형
+        'deepseek-chat':        { base: 12, rate: 0.8 },
+        'deepseek-v3.2':        { base: 10, rate: 0.7 },
+        // Meta Llama
+        'llama-3.3-70b':        { base: 18, rate: 1.5 },
+        'llama-4-maverick':     { base: 15, rate: 1.2 },
+        'llama-4-scout':        { base: 8,  rate: 0.5 },
     },
-    summary_default: { base: 25, rate: 1.5 },  // 새 모델 fallback
+    summary_default: { base: 20, rate: 1.5 },
 };
 
 // 전역 변수
