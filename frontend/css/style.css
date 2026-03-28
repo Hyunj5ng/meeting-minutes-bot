@@ -208,7 +208,7 @@ body {
     gap: 2rem;
 }
 
-/* 카드 공통 스타일 */
+/* 카드 공통 스타일 (레거시 호환) */
 .upload-card,
 .progress-card,
 .result-card {
@@ -218,18 +218,6 @@ body {
     box-shadow: var(--shadow-lg);
     position: relative;
     overflow: hidden;
-}
-
-.upload-card::before,
-.progress-card::before,
-.result-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 4px;
-    background: linear-gradient(90deg, #8BC34A, #F59E0B, #F97316, #EF4444);
 }
 
 /* 업로드 섹션 */
@@ -513,23 +501,244 @@ body {
     color: var(--text-primary);
 }
 
-/* 진행 상태 */
-.progress-card {
-    animation: fadeIn 0.3s ease;
+/* 통합 워크플로우 */
+.unified-workflow {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
 }
 
-.progress-header {
+.workflow-card {
+    background: var(--bg-secondary);
+    border-radius: 1rem;
+    padding: 2rem;
+    box-shadow: var(--shadow-lg);
+    position: relative;
+    overflow: hidden;
+}
+
+.workflow-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #8BC34A, #F59E0B, #F97316, #EF4444);
+}
+
+/* 업로드 카드 accordion */
+.upload-card-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 2rem;
+    cursor: pointer;
+    user-select: none;
 }
 
-.progress-header h3 {
-    font-size: 1.5rem;
+.upload-card-header h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
     color: var(--text-primary);
 }
 
+.accordion-arrow {
+    transition: transform 0.3s ease;
+    color: var(--text-secondary);
+    display: none;
+}
+
+.upload-card.collapsed .accordion-arrow {
+    transform: rotate(-90deg);
+    display: block;
+}
+
+.upload-card-body {
+    max-height: 2000px;
+    overflow: hidden;
+    transition: max-height 0.4s ease, opacity 0.3s ease, margin-top 0.3s ease;
+    opacity: 1;
+    margin-top: 1.5rem;
+}
+
+.upload-card.collapsed .upload-card-body {
+    max-height: 0;
+    opacity: 0;
+    margin-top: 0;
+}
+
+.upload-card.collapsed .upload-card-header h3 {
+    color: var(--text-secondary);
+    font-size: 1rem;
+}
+
+/* 스테퍼 카드 */
+.stepper-card {
+    animation: fadeIn 0.3s ease;
+}
+
+.stepper-rail {
+    display: flex;
+    flex-direction: column;
+}
+
+.stepper-step {
+    display: flex;
+    gap: 1rem;
+}
+
+.stepper-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.stepper-circle {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    background: white;
+    border: 2px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    transition: all 0.3s ease;
+    position: relative;
+    z-index: 1;
+}
+
+.stepper-line {
+    width: 2px;
+    flex: 1;
+    background: var(--border-color);
+    min-height: 1.5rem;
+    transition: background 0.3s ease;
+}
+
+.stepper-content {
+    flex: 1;
+    padding-bottom: 1.5rem;
+}
+
+.stepper-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.375rem;
+}
+
+.stepper-title {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+}
+
+.stepper-percentage {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.stepper-status {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.stepper-progress-bar {
+    width: 100%;
+    height: 0.375rem;
+    background: #E5E7EB;
+    border-radius: 9999px;
+    overflow: hidden;
+}
+
+.stepper-progress-fill {
+    height: 100%;
+    background: var(--border-color);
+    border-radius: 9999px;
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+.stepper-eta {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.375rem;
+    min-height: 1rem;
+}
+
+/* 스테퍼 상태: active */
+.stepper-step[data-state="active"] .stepper-circle {
+    border-color: var(--primary-color);
+    background: var(--primary-color);
+    color: white;
+}
+
+.stepper-step[data-state="active"] .stepper-line {
+    background: linear-gradient(to bottom, var(--primary-color), var(--border-color));
+}
+
+.stepper-step[data-state="active"] .stepper-percentage {
+    color: var(--primary-color);
+}
+
+.stepper-step[data-state="active"] .stepper-progress-fill {
+    background: var(--primary-color);
+    position: relative;
+}
+
+.stepper-step[data-state="active"] .stepper-progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+    animation: shimmer 2s infinite;
+}
+
+/* 스테퍼 상태: completed */
+.stepper-step[data-state="completed"] .stepper-circle {
+    border-color: var(--success-color);
+    background: var(--success-color);
+    color: white;
+}
+
+.stepper-step[data-state="completed"] .stepper-line {
+    background: var(--success-color);
+}
+
+.stepper-step[data-state="completed"] .stepper-percentage {
+    color: var(--success-color);
+}
+
+.stepper-step[data-state="completed"] .stepper-progress-fill {
+    background: var(--success-color);
+}
+
+.stepper-step[data-state="completed"] .stepper-status {
+    color: var(--success-color);
+}
+
+/* 스테퍼 상태: error */
+.stepper-step[data-state="error"] .stepper-circle {
+    border-color: var(--danger-color);
+    background: var(--danger-color);
+    color: white;
+}
+
+.stepper-step[data-state="error"] .stepper-progress-fill {
+    background: var(--danger-color);
+}
+
+.stepper-step[data-state="error"] .stepper-status {
+    color: var(--danger-color);
+}
+
+/* Spinner */
 .spinner {
     width: 2rem;
     height: 2rem;
@@ -543,167 +752,9 @@ body {
     to { transform: rotate(360deg); }
 }
 
-/* 전체 진행률 */
-.overall-progress {
-    margin-bottom: 2rem;
-    padding: 1.5rem;
-    background: var(--bg-primary);
-    border-radius: 0.75rem;
-}
-
-.progress-info {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.75rem;
-}
-
-.progress-label {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-.progress-percentage {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--primary-color);
-}
-
-.progress-bar-container {
-    width: 100%;
-    height: 1.5rem;
-    background: #E5E7EB;
-    border-radius: 9999px;
-    overflow: hidden;
-}
-
-.progress-bar {
-    height: 100%;
-    background: linear-gradient(90deg, #7CB342 0%, #F9A825 50%, #FB8C00 100%);
-    border-radius: 9999px;
-    transition: width 0.5s ease;
-    position: relative;
-}
-
-.progress-bar::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
-    animation: shimmer 2s infinite;
-}
-
 @keyframes shimmer {
     0% { transform: translateX(-100%); }
     100% { transform: translateX(100%); }
-}
-
-.progress-steps {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-}
-
-.step {
-    display: flex;
-    align-items: flex-start;
-    gap: 1rem;
-    padding: 1rem;
-    border-radius: 0.5rem;
-    background: var(--bg-primary);
-    transition: all 0.3s ease;
-}
-
-.step.active {
-    background: var(--primary-light);
-    border: 1px solid var(--primary-color);
-}
-
-.step.completed {
-    background: #ECFDF5;
-    border: 1px solid var(--success-color);
-}
-
-.step-indicator {
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 50%;
-    background: white;
-    border: 2px solid var(--border-color);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 600;
-    color: var(--text-secondary);
-    flex-shrink: 0;
-}
-
-.step.active .step-indicator {
-    border-color: var(--primary-color);
-    background: var(--primary-color);
-    color: white;
-}
-
-.step.completed .step-indicator {
-    border-color: var(--success-color);
-    background: var(--success-color);
-    color: white;
-}
-
-.step-content {
-    flex: 1;
-}
-
-.step-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
-}
-
-.step-title {
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-.step-percentage {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--primary-color);
-}
-
-.step.completed .step-percentage {
-    color: var(--success-color);
-}
-
-.step-status {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    margin-bottom: 0.5rem;
-}
-
-.step-progress-bar {
-    width: 100%;
-    height: 0.5rem;
-    background: #E5E7EB;
-    border-radius: 9999px;
-    overflow: hidden;
-}
-
-.step-progress-fill {
-    height: 100%;
-    background: var(--primary-color);
-    border-radius: 9999px;
-    transition: width 0.3s ease;
-    width: 0%;
-}
-
-.step.completed .step-progress-fill {
-    background: var(--success-color);
 }
 
 /* 결과 섹션 */
@@ -945,7 +996,8 @@ body {
 
     .upload-card,
     .progress-card,
-    .result-card {
+    .result-card,
+    .workflow-card {
         padding: 1.5rem;
     }
 
