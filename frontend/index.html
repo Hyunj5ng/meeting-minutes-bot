@@ -47,188 +47,168 @@
 
         <!-- 메인 컨텐츠 -->
         <main class="main-content" id="mainContent" style="display: none;">
-            <!-- 업로드 섹션 -->
-            <section class="upload-section">
-                <div class="upload-card">
-                    <div class="upload-area" id="uploadArea">
-                        <svg class="upload-icon" width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M32 16V40M32 16L24 24M32 16L40 24M16 48H48" stroke="#9CA3AF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+            <!-- 통합 워크플로우 -->
+            <section class="unified-workflow">
+                <!-- 업로드 영역 (accordion) -->
+                <div class="workflow-card upload-card" id="uploadCard">
+                    <div class="upload-card-header" id="uploadCardHeader">
+                        <h3>음성 파일 업로드</h3>
+                        <svg class="accordion-arrow" id="accordionArrow" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M5 8L10 13L15 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
-                        <h3>음성 파일을 드래그하거나 클릭하세요</h3>
-                        <p>지원 형식: MP3, WAV, M4A, OGG, FLAC, AAC</p>
-                        <input type="file" id="fileInput" accept=".mp3,.wav,.m4a,.ogg,.flac,.aac" hidden>
-                        <button class="btn-browse" onclick="event.stopPropagation(); document.getElementById('fileInput').click()">
-                            파일 선택
-                        </button>
                     </div>
-
-                    <!-- 선택된 파일 정보 -->
-                    <div class="file-info" id="fileInfo" style="display: none;">
-                        <div class="file-details">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="#10B981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <div class="upload-card-body" id="uploadCardBody">
+                        <div class="upload-area" id="uploadArea">
+                            <svg class="upload-icon" width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M32 16V40M32 16L24 24M32 16L40 24M16 48H48" stroke="#9CA3AF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
-                            <div>
-                                <p class="file-name" id="fileName"></p>
-                                <p class="file-size" id="fileSize"></p>
+                            <h3>음성 파일을 드래그하거나 클릭하세요</h3>
+                            <p>지원 형식: MP3, WAV, M4A, OGG, FLAC, AAC</p>
+                            <input type="file" id="fileInput" accept=".mp3,.wav,.m4a,.ogg,.flac,.aac" hidden>
+                            <button class="btn-browse" onclick="event.stopPropagation(); document.getElementById('fileInput').click()">
+                                파일 선택
+                            </button>
+                        </div>
+
+                        <!-- 선택된 파일 정보 -->
+                        <div class="file-info" id="fileInfo" style="display: none;">
+                            <div class="file-details">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="#10B981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                                <div>
+                                    <p class="file-name" id="fileName"></p>
+                                    <p class="file-size" id="fileSize"></p>
+                                </div>
+                            </div>
+                            <button class="btn-remove" id="removeFile">
+                                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <!-- 회의 정보 입력 -->
+                        <div class="options-section">
+                            <h4>회의 정보</h4>
+                            <div class="options-grid">
+                                <div class="option-group">
+                                    <label for="projectName">프로젝트명</label>
+                                    <input type="text" id="projectName" class="text-input" placeholder="예: 3P PDP Builder">
+                                </div>
+                                <div class="option-group">
+                                    <label for="meetingTitle">회의 제목</label>
+                                    <input type="text" id="meetingTitle" class="text-input" placeholder="예: 주간 팀 미팅">
+                                </div>
+                                <div class="option-group">
+                                    <label for="attendees">참석자</label>
+                                    <input type="text" id="attendees" class="text-input" placeholder="홍길동, 김철수, 박영희">
+                                </div>
+                                <div class="option-group">
+                                    <label for="keywords">키워드</label>
+                                    <input type="text" id="keywords" class="text-input" placeholder="예산, 일정, 기술검토">
+                                </div>
                             </div>
                         </div>
-                        <button class="btn-remove" id="removeFile">
+
+                        <!-- AI 모델 선택 -->
+                        <div class="options-section">
+                            <h4>AI 모델 선택</h4>
+                            <div class="option-group">
+                                <label for="gptModelUpload">회의록 생성에 사용할 AI 모델</label>
+                                <select id="gptModelUpload" class="select-input">
+                                    <option value="claude-sonnet-4-5-20250929" selected>Claude Sonnet 4.5 - 고품질 회의록 ($0.13/60분)</option>
+                                    <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 - 빠르고 경제적 ($0.08/60분)</option>
+                                    <option value="gpt-5-mini">GPT-5 Mini - 가장 저렴 ($0.05/60분)</option>
+                                    <option value="gpt-5.1">GPT-5.1 - 세부 내용 심층 요약 ($0.11/60분)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- 이메일 발송 옵션 -->
+                        <div class="email-option">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="autoEmailCheckbox">
+                                <span>이메일로도 요약 내용을 보낼까요?</span>
+                            </label>
+                            <p class="email-option-hint">체크하시면 기다릴 필요없이 이메일로 요약본을 받으실 수 있습니다.</p>
+                        </div>
+
+                        <!-- 변환 버튼 -->
+                        <button class="btn-primary" id="convertBtn" disabled>
                             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                <path d="M10 4V16M10 16L14 12M10 16L6 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
+                            회의록 생성하기
                         </button>
                     </div>
-
-                    <!-- 회의 정보 입력 -->
-                    <div class="options-section">
-                        <h4>회의 정보</h4>
-                        <div class="options-grid">
-                            <div class="option-group">
-                                <label for="projectName">프로젝트명</label>
-                                <input type="text" id="projectName" class="text-input" placeholder="예: 3P PDP Builder">
-                            </div>
-                            <div class="option-group">
-                                <label for="meetingTitle">회의 제목</label>
-                                <input type="text" id="meetingTitle" class="text-input" placeholder="예: 주간 팀 미팅">
-                            </div>
-                            <div class="option-group">
-                                <label for="attendees">참석자</label>
-                                <input type="text" id="attendees" class="text-input" placeholder="홍길동, 김철수, 박영희">
-                            </div>
-                            <div class="option-group">
-                                <label for="keywords">키워드</label>
-                                <input type="text" id="keywords" class="text-input" placeholder="예산, 일정, 기술검토">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- AI 모델 선택 -->
-                    <div class="options-section">
-                        <h4>AI 모델 선택</h4>
-
-                        <div class="option-group">
-                            <label for="gptModelUpload">회의록 생성에 사용할 AI 모델</label>
-                            <select id="gptModelUpload" class="select-input">
-                                <option value="claude-sonnet-4-5-20250929" selected>Claude Sonnet 4.5 - 고품질 회의록 ($0.13/60분)</option>
-                                <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 - 빠르고 경제적 ($0.08/60분)</option>
-                                <option value="gpt-5-mini">GPT-5 Mini - 가장 저렴 ($0.05/60분)</option>
-                                <option value="gpt-5.1">GPT-5.1 - 세부 내용 심층 요약 ($0.11/60분)</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- 이메일 발송 옵션 -->
-                    <div class="email-option">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="autoEmailCheckbox">
-                            <span>이메일로도 요약 내용을 보낼까요?</span>
-                        </label>
-                        <p class="email-option-hint">체크하시면 기다릴 필요없이 이메일로 요약본을 받으실 수 있습니다.</p>
-                    </div>
-
-                    <!-- 변환 버튼 -->
-                    <button class="btn-primary" id="convertBtn" disabled>
-                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M10 4V16M10 16L14 12M10 16L6 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                        회의록 생성하기
-                    </button>
                 </div>
-            </section>
 
-            <!-- 진행 상태 -->
-            <section class="progress-section" id="progressSection" style="display: none;">
-                <div class="progress-card">
-                    <div class="progress-header">
-                        <h3>처리 중...</h3>
-                        <div class="spinner"></div>
-                    </div>
-
-                    <!-- 전체 진행률 -->
-                    <div class="overall-progress">
-                        <div class="progress-info">
-                            <span class="progress-label">전체 진행률</span>
-                            <span class="progress-percentage" id="overallProgress">0%</span>
-                        </div>
-                        <div class="progress-bar-container">
-                            <div class="progress-bar" id="overallProgressBar" style="width: 0%"></div>
-                        </div>
-                    </div>
-
-                    <div class="progress-steps">
-                        <div class="step" id="step1">
-                            <div class="step-indicator">1</div>
-                            <div class="step-content">
-                                <div class="step-header">
-                                    <p class="step-title">음성 파일 업로드</p>
-                                    <span class="step-percentage" id="step1Progress">0%</span>
+                <!-- 스테퍼 진행 영역 -->
+                <div class="workflow-card stepper-card" id="stepperCard" style="display: none;">
+                    <div class="stepper-rail">
+                        <!-- Step 1: 파일 업로드 -->
+                        <div class="stepper-step" id="step1" data-state="pending">
+                            <div class="stepper-indicator">
+                                <div class="stepper-circle">1</div>
+                                <div class="stepper-line"></div>
+                            </div>
+                            <div class="stepper-content">
+                                <div class="stepper-header">
+                                    <p class="stepper-title">파일 업로드</p>
+                                    <span class="stepper-percentage" id="step1Progress">0%</span>
                                 </div>
-                                <p class="step-status">대기 중...</p>
-                                <div class="step-progress-bar">
-                                    <div class="step-progress-fill" id="step1ProgressBar"></div>
+                                <p class="stepper-status" id="step1Status">대기 중...</p>
+                                <div class="stepper-progress-bar">
+                                    <div class="stepper-progress-fill" id="step1ProgressBar"></div>
                                 </div>
+                                <p class="stepper-eta" id="step1Eta"></p>
                             </div>
                         </div>
-                        <div class="step" id="step2">
-                            <div class="step-indicator">2</div>
-                            <div class="step-content">
-                                <div class="step-header">
-                                    <p class="step-title">음성을 텍스트로 변환 (STT)</p>
-                                    <span class="step-percentage" id="step2Progress">0%</span>
+
+                        <!-- Step 2: STT 변환 -->
+                        <div class="stepper-step" id="step2" data-state="pending">
+                            <div class="stepper-indicator">
+                                <div class="stepper-circle">2</div>
+                                <div class="stepper-line"></div>
+                            </div>
+                            <div class="stepper-content">
+                                <div class="stepper-header">
+                                    <p class="stepper-title">음성을 텍스트로 변환 (STT)</p>
+                                    <span class="stepper-percentage" id="step2Progress">0%</span>
                                 </div>
-                                <p class="step-status">대기 중...</p>
-                                <div class="step-progress-bar">
-                                    <div class="step-progress-fill" id="step2ProgressBar"></div>
+                                <p class="stepper-status" id="step2Status">대기 중...</p>
+                                <div class="stepper-progress-bar">
+                                    <div class="stepper-progress-fill" id="step2ProgressBar"></div>
                                 </div>
+                                <p class="stepper-eta" id="step2Eta"></p>
+                            </div>
+                        </div>
+
+                        <!-- Step 3: AI 요약 -->
+                        <div class="stepper-step" id="step3" data-state="pending">
+                            <div class="stepper-indicator">
+                                <div class="stepper-circle">3</div>
+                            </div>
+                            <div class="stepper-content">
+                                <div class="stepper-header">
+                                    <p class="stepper-title">AI 회의록 생성</p>
+                                    <span class="stepper-percentage" id="step3Progress">0%</span>
+                                </div>
+                                <p class="stepper-status" id="step3Status">대기 중...</p>
+                                <div class="stepper-progress-bar">
+                                    <div class="stepper-progress-fill" id="step3ProgressBar"></div>
+                                </div>
+                                <p class="stepper-eta" id="step3Eta"></p>
                             </div>
                         </div>
                     </div>
                 </div>
-            </section>
 
-            <!-- 요약 진행 상태 -->
-            <section class="progress-section" id="summaryProgressSection" style="display: none;">
-                <div class="progress-card">
-                    <div class="progress-header">
-                        <h3>회의록 생성 중...</h3>
-                        <div class="spinner"></div>
-                    </div>
-
-                    <!-- 전체 진행률 -->
-                    <div class="overall-progress">
-                        <div class="progress-info">
-                            <span class="progress-label">진행률</span>
-                            <span class="progress-percentage" id="summaryOverallProgress">0%</span>
-                        </div>
-                        <div class="progress-bar-container">
-                            <div class="progress-bar" id="summaryOverallProgressBar" style="width: 0%"></div>
-                        </div>
-                    </div>
-
-                    <div class="progress-steps">
-                        <div class="step" id="summaryStep">
-                            <div class="step-indicator">3</div>
-                            <div class="step-content">
-                                <div class="step-header">
-                                    <p class="step-title">회의록 생성 (GPT)</p>
-                                    <span class="step-percentage" id="summaryStepProgress">0%</span>
-                                </div>
-                                <p class="step-status">대기 중...</p>
-                                <div class="step-progress-bar">
-                                    <div class="step-progress-fill" id="summaryStepProgressBar"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- 결과 섹션 -->
-            <section class="result-section" id="resultSection" style="display: none;">
-                <div class="result-card">
+                <!-- 결과 영역 (인라인) -->
+                <div class="workflow-card result-card" id="resultSection" style="display: none;">
                     <div class="result-header">
-                        <h3>✅ 회의록 생성 완료!</h3>
+                        <h3>회의록 생성 완료!</h3>
                         <button class="btn-download" id="downloadBtn">
                             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M10 12L6 8M10 12L14 8M10 12V4M4 16H16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
