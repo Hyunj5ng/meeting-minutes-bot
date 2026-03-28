@@ -5,10 +5,26 @@ from dotenv import load_dotenv
 
 # OpenRouter 모델 매핑 (프론트엔드 모델명 → OpenRouter 모델 ID)
 MODEL_MAP = {
-    "claude-sonnet-4-5-20250929": "anthropic/claude-sonnet-4-5-20250929",
-    "claude-haiku-4-5-20251001": "anthropic/claude-haiku-4-5-20251001",
-    "gpt-5.1": "openai/gpt-5.1",
-    "gpt-5-mini": "openai/gpt-5-mini",
+    # OpenAI
+    "gpt-5.4-pro": "openai/gpt-5.4-pro",
+    "gpt-5.4": "openai/gpt-5.4",
+    "gpt-5.4-nano": "openai/gpt-5.4-nano",
+    # Anthropic
+    "claude-opus-4.6": "anthropic/claude-opus-4.6",
+    "claude-sonnet-4.6": "anthropic/claude-sonnet-4.6",
+    "claude-haiku-4.5": "anthropic/claude-haiku-4.5",
+    # Google
+    "gemini-2.5-pro": "google/gemini-2.5-pro-preview-03-25",
+    "gemini-2.5-flash": "google/gemini-2.5-flash",
+    "gemini-2.5-flash-lite": "google/gemini-2.5-flash-lite",
+    # DeepSeek
+    "deepseek-r1": "deepseek/deepseek-r1",
+    "deepseek-chat": "deepseek/deepseek-chat",
+    "deepseek-v3.2": "deepseek/deepseek-v3.2",
+    # Meta Llama
+    "llama-3.3-70b": "meta-llama/llama-3.3-70b-instruct",
+    "llama-4-maverick": "meta-llama/llama-4-maverick",
+    "llama-4-scout": "meta-llama/llama-4-scout",
 }
 
 
