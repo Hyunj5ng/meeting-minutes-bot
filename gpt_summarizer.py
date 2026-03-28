@@ -25,6 +25,10 @@ class GPTSummarizer:
             self.client = AsyncOpenAI(
                 api_key=api_key,
                 base_url="https://openrouter.ai/api/v1",
+                default_headers={
+                    "HTTP-Referer": "https://meeting-bot.jonny.kim",
+                    "X-Title": "Summarying",
+                },
             )
         else:
             self.client = None
