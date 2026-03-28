@@ -322,7 +322,7 @@ body {
     background: var(--bg-primary);
 }
 
-.btn-download {
+.btn-copy {
     background: var(--success-color);
     color: white;
     border: none;
@@ -337,7 +337,7 @@ body {
     transition: all 0.2s ease;
 }
 
-.btn-download:hover {
+.btn-copy:hover {
     background: #059669;
     transform: translateY(-1px);
 }
@@ -1015,7 +1015,7 @@ body {
         gap: 1rem;
     }
 
-    .btn-download {
+    .btn-copy {
         width: 100%;
         justify-content: center;
     }
