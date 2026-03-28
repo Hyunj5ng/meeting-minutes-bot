@@ -592,7 +592,7 @@ async function doSummarize() {
     // 한국어는 글자수/1500 ≈ 1k 토큰 (대략)
     const estimatedTokensK = transcriptLength / 1500;
     const coeff = ESTIMATION.summary[gptModel] || ESTIMATION.summary_default;
-    const estimatedMs = (coeff.base + coeff.rate * estimatedTokensK) * 1000;
+    const estimatedMs = (coeff.base + coeff.rate * estimatedTokensK) * 1000 * 1.3; // +30% 여유
 
     const summaryProgress = new RealisticProgress(estimatedMs, (pct, remaining) => {
         updateStepUI(3, pct, `${modelName}로 회의록 생성 중...`, formatEta(remaining));
