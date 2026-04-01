@@ -39,7 +39,7 @@ python api.py               # 서버 실행 (http://localhost:8000/app)
 
 ## 환경 변수 (필수)
 - `GROQ_API_KEY` — STT용
-- `OPENAI_API_KEY` 또는 `ANTHROPIC_API_KEY` — LLM 요약용
+- `OPENROUTER_API_KEY` — LLM 요약용 (OpenRouter 통합)
 - `DATABASE_URL` — PostgreSQL (미설정 시 SQLite 사용)
 - `RESEND_API_KEY` — 이메일 발송용 Resend API 키 (선택)
 - `CHROMA_DATA_DIR` — ChromaDB 저장 경로 (기본: `chroma_data/`)

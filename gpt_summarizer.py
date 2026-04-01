@@ -1,11 +1,32 @@
 from openai import AsyncOpenAI
-import anthropic
 import os
 from dotenv import load_dotenv
 
 
-# Claude 모델 목록
-CLAUDE_MODELS = ["claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001"]
+# OpenRouter 모델 매핑 (프론트엔드 모델명 → OpenRouter 모델 ID)
+MODEL_MAP = {
+    # OpenAI
+    "gpt-5.4-pro": "openai/gpt-5.4-pro",
+    "gpt-5.4": "openai/gpt-5.4",
+    "gpt-5.4-nano": "openai/gpt-5.4-nano",
+    # Anthropic
+    "claude-opus-4.6": "anthropic/claude-opus-4.6",
+    "claude-sonnet-4.6": "anthropic/claude-sonnet-4.6",
+    "claude-haiku-4.5": "anthropic/claude-haiku-4.5",
+    # Google
+    "gemini-2.5-pro": "google/gemini-2.5-pro-preview-03-25",
+    "gemini-2.5-flash": "google/gemini-2.5-flash",
+    "gemini-2.5-flash-lite": "google/gemini-2.5-flash-lite",
+    # DeepSeek
+    "deepseek-r1": "deepseek/deepseek-r1",
+    "deepseek-chat": "deepseek/deepseek-chat",
+    "deepseek-v3.2": "deepseek/deepseek-v3.2",
+    # Meta Llama
+    "llama-3.3-70b": "meta-llama/llama-3.3-70b-instruct",
+    "llama-4-maverick": "meta-llama/llama-4-maverick",
+    "llama-4-scout": "meta-llama/llama-4-scout",
+}
+
 
 # 시스템 프롬프트
 SYSTEM_PROMPT = """당신은 전문적인 회의록 작성 비서입니다.
@@ -14,32 +35,58 @@ SYSTEM_PROMPT = """당신은 전문적인 회의록 작성 비서입니다.
 - 회의에서 논의된 세부 내용을 절대 생략하지 않습니다.
 - 모든 발언과 논의 사항을 빠짐없이 포착하되, 체계적으로 구조화합니다.
 - 원본 텍스트에 등장하는 구체적인 수치, 이름, 날짜, 기술 용어 등은 반드시 포함합니다.
-- bullet point 계층 구조를 활용하여 가독성을 높입니다."""
+- bullet point 계층 구조를 활용하여 가독성을 높입니다.
+- 원문에 없는 내용을 추측하거나 지어내지 마세요.
+- 반드시 아래 4개 섹션을 모두 포함하세요. 어떤 섹션도 생략하지 마세요.
+- 각 섹션은 "## " 마크다운 헤더로 시작합니다.
+- 해당 내용이 없는 섹션에는 "- 해당 없음"이라고 작성하세요.
+- 한국어로 작성하세요.
+
+## 출력 형식 (이 형식을 정확히 따르세요)
+
+## 회의 주제
+(1~2문장으로 회의의 주요 목적과 주제를 서술)
+
+## 주요 논의 사항
+논의된 모든 내용을 주제별로 분류하여 정리합니다. 각 주제 아래 세부 내용을 빠짐없이 기록하세요.
+• 주요 주제 1
+  - 세부 논의 내용
+  - 구체적 수치나 사례
+  - 관련 의견 및 반론
+• 주요 주제 2
+  - ...
+
+## 결정 사항
+- (회의에서 내린 결정들)
+- (결정의 배경이나 이유가 언급되었다면 간략히 포함)
+
+## 액션 아이템
+- [ ] (구체적인 작업 내용) — 담당: (이름) / 기한: (날짜 또는 시기)
+- [ ] (담당자나 기한이 언급되지 않았다면 해당 부분 생략 가능)
+"""
 
 
 class GPTSummarizer:
     def __init__(self):
         """
-        OpenAI GPT API와 Anthropic Claude API를 초기화합니다 (비동기).
-        .env 파일에서 API 키를 불러옵니다.
+        OpenRouter API를 통해 여러 LLM을 사용합니다.
+        .env 파일에서 OPENROUTER_API_KEY를 불러옵니다.
         """
         load_dotenv()
 
-        # OpenAI 클라이언트 (비동기)
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        if openai_api_key:
-            self.openai_client = AsyncOpenAI(api_key=openai_api_key)
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if api_key:
+            self.client = AsyncOpenAI(
+                api_key=api_key,
+                base_url="https://openrouter.ai/api/v1",
+                default_headers={
+                    "HTTP-Referer": "https://meeting-bot.jonny.kim",
+                    "X-Title": "Summarying",
+                },
+            )
         else:
-            self.openai_client = None
-            print("경고: OPENAI_API_KEY가 설정되지 않았습니다.")
-
-        # Anthropic 클라이언트 (비동기)
-        anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-        if anthropic_api_key:
-            self.anthropic_client = anthropic.AsyncAnthropic(api_key=anthropic_api_key)
-        else:
-            self.anthropic_client = None
-            print("경고: ANTHROPIC_API_KEY가 설정되지 않았습니다.")
+            self.client = None
+            print("경고: OPENROUTER_API_KEY가 설정되지 않았습니다.")
 
     async def summarize(self, text, model="gpt-5-mini", context=None, past_context=None):
         """
@@ -47,77 +94,36 @@ class GPTSummarizer:
 
         Args:
             text: STT로 변환된 원본 텍스트
-            model: 사용할 모델
+            model: 사용할 모델 (프론트엔드 기준 이름)
             context: 회의 맥락 정보 dict (project_name, meeting_title, attendees, keywords)
             past_context: RAG로 검색된 과거 회의록 요약 리스트
 
         Returns:
             dict: {"summary": str, "input_tokens": int, "output_tokens": int}
         """
-        # Claude 모델인지 확인
-        if model in CLAUDE_MODELS:
-            return await self._summarize_with_claude(text, model, context, past_context)
-        else:
-            return await self._summarize_with_openai(text, model, context, past_context)
+        if not self.client:
+            raise ValueError("OPENROUTER_API_KEY가 설정되지 않았습니다.")
 
-    async def _summarize_with_openai(self, text, model, context=None, past_context=None):
-        """OpenAI GPT로 요약 (비동기)"""
-        if not self.openai_client:
-            raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다.")
-
-        print(f"OpenAI {model}을 사용하여 회의록 작성 중...")
+        # OpenRouter 모델 ID로 변환 (매핑에 없으면 그대로 사용)
+        router_model = MODEL_MAP.get(model, model)
+        print(f"OpenRouter ({router_model})을 사용하여 회의록 작성 중...")
 
         prompt = self._get_prompt(text, context, past_context)
 
-        api_params = {
-            "model": model,
-            "messages": [
+        response = await self.client.chat.completions.create(
+            model=router_model,
+            messages=[
                 {
                     "role": "system",
                     "content": SYSTEM_PROMPT,
                 },
                 {"role": "user", "content": prompt},
             ],
-        }
-
-        # GPT-5 모델이 아닌 경우에만 temperature 설정
-        if not model.startswith("gpt-5"):
-            api_params["temperature"] = 0.3
-
-        response = await self.openai_client.chat.completions.create(**api_params)
-
-        summary = response.choices[0].message.content
-        input_tokens = response.usage.prompt_tokens
-        output_tokens = response.usage.completion_tokens
-        print(f"회의록 작성 완료! (입력: {input_tokens} tokens, 출력: {output_tokens} tokens)")
-
-        return {
-            "summary": summary,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens
-        }
-
-    async def _summarize_with_claude(self, text, model, context=None, past_context=None):
-        """Anthropic Claude로 요약 (비동기)"""
-        if not self.anthropic_client:
-            raise ValueError("ANTHROPIC_API_KEY가 설정되지 않았습니다.")
-
-        print(f"Claude {model}을 사용하여 회의록 작성 중...")
-
-        prompt = self._get_prompt(text, context, past_context)
-
-        response = await self.anthropic_client.messages.create(
-            model=model,
-            max_tokens=8192,
-            system=SYSTEM_PROMPT,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
         )
 
-        summary = response.content[0].text
-        input_tokens = response.usage.input_tokens
-        output_tokens = response.usage.output_tokens
+        summary = response.choices[0].message.content
+        input_tokens = response.usage.prompt_tokens if response.usage else 0
+        output_tokens = response.usage.completion_tokens if response.usage else 0
         print(f"회의록 작성 완료! (입력: {input_tokens} tokens, 출력: {output_tokens} tokens)")
 
         return {
@@ -155,8 +161,7 @@ class GPTSummarizer:
                 + "\n\n위 과거 회의 내용을 참고하여, 연속성 있는 맥락으로 이번 회의록을 작성해주세요.\n\n"
             )
 
-        return f"""{context_section}{past_context_section}다음은 회의 중 녹음된 음성을 텍스트로 변환한 내용입니다.
-이를 읽기 쉽고 체계적인 회의록으로 정리해주세요.
+        return f"""{context_section}{past_context_section}아래는 회의 중 녹음된 음성을 텍스트로 변환한 내용입니다. 시스템 프롬프트의 출력 형식에 맞춰 회의록을 작성해주세요.
 
 **중요 지침:**
 - 원본 텍스트에 포함된 세부 논의 내용, 구체적인 사례, 수치, 의견 등을 빠뜨리지 마세요.
@@ -164,29 +169,7 @@ class GPTSummarizer:
 - 누가 무엇을 말했는지 파악 가능하면 발언자를 명시하세요.
 - 단순 요약이 아니라, 논의의 맥락과 근거까지 포함하세요.
 
-다음 형식으로 작성해주세요:
-
-## 1. 회의 주제
-회의의 주요 목적과 주제를 간결하게 서술
-
-## 2. 주요 논의 사항
-논의된 모든 내용을 주제별로 분류하여 정리합니다. 각 주제 아래 세부 내용을 빠짐없이 기록하세요.
-• 주요 주제 1
-  - 세부 논의 내용
-  - 구체적 수치나 사례
-  - 관련 의견 및 반론
-• 주요 주제 2
-  - ...
-
-## 3. 결정 사항
-회의에서 확정된 결정들을 명확하게 나열
-• 결정 1
-• 결정 2
-
-## 4. 액션 아이템
-향후 진행해야 할 작업들 (담당자, 기한이 언급되었다면 반드시 포함)
-• [담당자] 작업 내용 (기한: ~)
-
-원본 텍스트:
+<transcript>
 {text}
+</transcript>
 """

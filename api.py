@@ -35,13 +35,26 @@ class SummaryUpdateRequest(BaseModel):
 # API 모델별 가격표 (USD per 1M tokens, Whisper는 USD per minute)
 MODEL_PRICING = {
     "whisper-large-v3-turbo": {"per_minute": 0.000667},
-    "gpt-5.1": {"input": 1.25, "output": 10.00},
-    "gpt-5": {"input": 1.25, "output": 10.00},
-    "gpt-5-mini": {"input": 0.25, "output": 2.00},
-    "gpt-5-nano": {"input": 0.05, "output": 0.40},
-    "gpt-4.1": {"input": 2.00, "output": 8.00},
-    "claude-sonnet-4-5-20250929": {"input": 3.00, "output": 15.00},
-    "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
+    # OpenAI
+    "gpt-5.4-pro": {"input": 30.00, "output": 180.00},
+    "gpt-5.4": {"input": 2.50, "output": 15.00},
+    "gpt-5.4-nano": {"input": 0.20, "output": 1.25},
+    # Anthropic
+    "claude-opus-4.6": {"input": 5.00, "output": 25.00},
+    "claude-sonnet-4.6": {"input": 3.00, "output": 15.00},
+    "claude-haiku-4.5": {"input": 1.00, "output": 5.00},
+    # Google
+    "gemini-2.5-pro": {"input": 1.25, "output": 10.00},
+    "gemini-2.5-flash": {"input": 0.30, "output": 2.50},
+    "gemini-2.5-flash-lite": {"input": 0.10, "output": 0.40},
+    # DeepSeek
+    "deepseek-r1": {"input": 0.70, "output": 2.50},
+    "deepseek-chat": {"input": 0.32, "output": 0.89},
+    "deepseek-v3.2": {"input": 0.26, "output": 0.38},
+    # Meta Llama
+    "llama-3.3-70b": {"input": 2.75, "output": 2.75},
+    "llama-4-maverick": {"input": 0.15, "output": 0.60},
+    "llama-4-scout": {"input": 0.08, "output": 0.30},
 }
 
 # 사용량 제한 (환경변수로 설정 가능) — STT 분(minutes) 단위만 적용
@@ -87,15 +100,26 @@ def check_usage_limit(db: Session, user_id: int, audio_minutes: float = 0.0):
 
 # LLM 모델 선택을 위한 Enum (GPT + Claude)
 class LLMModel(str, Enum):
-    # OpenAI GPT 모델
-    GPT_51 = "gpt-5.1"  # 복잡한 회의 의사결정/코드 협업에 최적, 추론 강도 조절 가능
-    GPT_50 = "gpt-5"  # 한 세대 이전의 추론형 모델, 회의록 자동화에 안정적
-    GPT_5_MINI = "gpt-5-mini"  # 명확한 회의 노트 정리에 빠르고 비용 효율적
-    GPT_5_NANO = "gpt-5-nano"  # 속도·비용 최적, 짧은 회의 메모 요약에 적합
-    GPT_41 = "gpt-4.1"  # 추론 없는 일반형, 가벼운 회의 요약용
-    # Anthropic Claude 모델
-    CLAUDE_SONNET_45 = "claude-sonnet-4-5-20250929"  # 고품질 회의록, 빠른 속도
-    CLAUDE_HAIKU_45 = "claude-haiku-4-5-20251001"  # 가장 빠르고 경제적
+    # OpenAI
+    GPT_54_PRO = "gpt-5.4-pro"
+    GPT_54 = "gpt-5.4"
+    GPT_54_NANO = "gpt-5.4-nano"
+    # Anthropic
+    CLAUDE_OPUS_46 = "claude-opus-4.6"
+    CLAUDE_SONNET_46 = "claude-sonnet-4.6"
+    CLAUDE_HAIKU_45 = "claude-haiku-4.5"
+    # Google
+    GEMINI_25_PRO = "gemini-2.5-pro"
+    GEMINI_25_FLASH = "gemini-2.5-flash"
+    GEMINI_25_FLASH_LITE = "gemini-2.5-flash-lite"
+    # DeepSeek
+    DEEPSEEK_R1 = "deepseek-r1"
+    DEEPSEEK_CHAT = "deepseek-chat"
+    DEEPSEEK_V32 = "deepseek-v3.2"
+    # Meta Llama
+    LLAMA_33_70B = "llama-3.3-70b"
+    LLAMA_4_MAVERICK = "llama-4-maverick"
+    LLAMA_4_SCOUT = "llama-4-scout"
 
 # 하위 호환성을 위한 별칭
 GPTModel = LLMModel
@@ -479,7 +503,7 @@ async def transcribe_only(
 @app.post("/summarize")
 async def summarize_transcript(
     transcript_id: int = Form(..., description="Transcript 레코드 ID"),
-    gpt_model: GPTModel = Form(GPTModel.GPT_5_MINI, description="사용할 GPT 모델 선택"),
+    gpt_model: GPTModel = Form(GPTModel.CLAUDE_SONNET_46, description="사용할 GPT 모델 선택"),
     save_files: bool = Form(True, description="결과 파일을 서버에 저장할지 여부"),
     return_file: bool = Form(False, description="회의록을 텍스트 파일로 다운로드 (true 시 파일 응답, false 시 JSON 응답)"),
     current_user: User = Depends(get_current_user),
@@ -638,7 +662,7 @@ async def summarize_transcript(
 @app.post("/transcribe")
 async def transcribe_audio(
     file: UploadFile = File(..., description="음성 파일 (mp3, wav, m4a 등)"),
-    gpt_model: GPTModel = Form(GPTModel.GPT_5_MINI, description="사용할 GPT 모델 선택"),
+    gpt_model: GPTModel = Form(GPTModel.CLAUDE_SONNET_46, description="사용할 GPT 모델 선택"),
     whisper_model: WhisperModel = Form(WhisperModel.BASE, description="Whisper API는 단일 모델 사용 (값은 기록용)"),
     save_files: bool = Form(True, description="결과 파일을 서버에 저장할지 여부"),
     return_file: bool = Form(False, description="회의록을 텍스트 파일로 다운로드 (true 시 파일 응답, false 시 JSON 응답)"),
