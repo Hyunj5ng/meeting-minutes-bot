@@ -20,7 +20,7 @@ import boto3
 # 데이터베이스 관련 임포트
 from database import get_db, engine, Base
 from models import TranscriptRecord, SummaryRecord, User
-from auth import get_current_user, verify_google_token, create_access_token
+from auth import get_current_user, verify_google_token, create_access_token, create_refresh_token, verify_refresh_token, revoke_refresh_token
 import crud
 
 
@@ -301,11 +301,13 @@ async def google_login(
             picture=google_info["picture"],
         )
 
-    # JWT 발급
+    # JWT + Refresh Token 발급
     access_token = create_access_token(user.id, user.email)
+    refresh_token = create_refresh_token(db, user)
 
     return {
         "access_token": access_token,
+        "refresh_token": refresh_token,
         "user": {
             "id": user.id,
             "email": user.email,
@@ -313,6 +315,27 @@ async def google_login(
             "picture": user.picture,
         }
     }
+
+
+@app.post("/auth/refresh")
+async def refresh_access_token(
+    refresh_token: str = Form(..., description="리프레시 토큰"),
+    db: Session = Depends(get_db),
+):
+    """리프레시 토큰으로 새 액세스 토큰 발급"""
+    user = verify_refresh_token(db, refresh_token)
+    new_access_token = create_access_token(user.id, user.email)
+    return {"access_token": new_access_token}
+
+
+@app.post("/auth/logout")
+async def logout_user(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """로그아웃 — 리프레시 토큰 무효화"""
+    revoke_refresh_token(db, current_user)
+    return {"message": "로그아웃 완료"}
 
 
 @app.get("/auth/me")

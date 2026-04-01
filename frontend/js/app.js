@@ -14,6 +14,9 @@ let isEditMode = false;
 // 인증 상태
 let currentUser = null;
 let accessToken = null;
+let refreshToken = null;
+let _isRefreshing = false;
+let _refreshPromise = null;
 
 // DOM 요소 (로그인 후 초기화)
 let uploadArea, fileInput, fileInfo, fileName, fileSize;
@@ -31,8 +34,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function initAuth() {
     accessToken = localStorage.getItem('access_token');
+    refreshToken = localStorage.getItem('refresh_token');
     if (accessToken) {
         verifyToken();
+    } else if (refreshToken) {
+        tryRefreshToken();
     } else {
         showLoginSection();
     }
@@ -72,8 +78,10 @@ async function handleGoogleSignIn(response) {
 
         const data = await res.json();
         accessToken = data.access_token;
+        refreshToken = data.refresh_token;
         currentUser = data.user;
         localStorage.setItem('access_token', accessToken);
+        localStorage.setItem('refresh_token', refreshToken);
 
         showMainApp();
     } catch (error) {
@@ -92,22 +100,84 @@ async function verifyToken() {
             const data = await res.json();
             currentUser = data.user;
             showMainApp();
+        } else if (refreshToken) {
+            tryRefreshToken();
         } else {
-            localStorage.removeItem('access_token');
-            accessToken = null;
+            clearAuthState();
             showLoginSection();
         }
     } catch {
-        localStorage.removeItem('access_token');
-        accessToken = null;
+        if (refreshToken) {
+            tryRefreshToken();
+        } else {
+            clearAuthState();
+            showLoginSection();
+        }
+    }
+}
+
+async function tryRefreshToken() {
+    try {
+        const formData = new FormData();
+        formData.append('refresh_token', refreshToken);
+        const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
+            method: 'POST',
+            body: formData,
+        });
+        if (res.ok) {
+            const data = await res.json();
+            accessToken = data.access_token;
+            localStorage.setItem('access_token', accessToken);
+            verifyToken();
+        } else {
+            clearAuthState();
+            showLoginSection();
+        }
+    } catch {
+        clearAuthState();
         showLoginSection();
     }
 }
 
-function logout() {
+async function tryRefreshTokenSilent() {
+    try {
+        const formData = new FormData();
+        formData.append('refresh_token', refreshToken);
+        const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
+            method: 'POST',
+            body: formData,
+        });
+        if (res.ok) {
+            const data = await res.json();
+            accessToken = data.access_token;
+            localStorage.setItem('access_token', accessToken);
+            return true;
+        }
+        return false;
+    } catch {
+        return false;
+    }
+}
+
+function clearAuthState() {
     localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
     accessToken = null;
+    refreshToken = null;
     currentUser = null;
+}
+
+async function logout() {
+    // 서버 측 리프레시 토큰 무효화 (best-effort)
+    if (accessToken) {
+        try {
+            await fetch(`${API_BASE_URL}/auth/logout`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${accessToken}` },
+            });
+        } catch { /* ignore */ }
+    }
+    clearAuthState();
     if (typeof google !== 'undefined' && google.accounts) {
         google.accounts.id.disableAutoSelect();
     }
@@ -159,7 +229,7 @@ function showMainApp() {
     fetchUsageInfo();
 }
 
-// 인증된 fetch 래퍼
+// 인증된 fetch 래퍼 (401 시 자동 토큰 갱신 + 재시도)
 async function authFetch(url, options = {}) {
     if (!options.headers) {
         options.headers = {};
@@ -169,10 +239,30 @@ async function authFetch(url, options = {}) {
         options.headers['Authorization'] = `Bearer ${accessToken}`;
     }
 
-    const res = await fetch(url, options);
+    let res = await fetch(url, options);
 
-    if (res.status === 401) {
-        logout();
+    if (res.status === 401 && refreshToken) {
+        // 동시 다발적 401 방지: 하나의 refresh만 실행
+        if (!_isRefreshing) {
+            _isRefreshing = true;
+            _refreshPromise = tryRefreshTokenSilent();
+        }
+        const refreshed = await _refreshPromise;
+        _isRefreshing = false;
+        _refreshPromise = null;
+
+        if (refreshed) {
+            // 새 토큰으로 원본 요청 재시도
+            options.headers['Authorization'] = `Bearer ${accessToken}`;
+            res = await fetch(url, options);
+        } else {
+            clearAuthState();
+            showLoginSection();
+            throw new Error('세션이 만료되었습니다. 다시 로그인해주세요.');
+        }
+    } else if (res.status === 401) {
+        clearAuthState();
+        showLoginSection();
         throw new Error('세션이 만료되었습니다. 다시 로그인해주세요.');
     }
 

@@ -19,6 +19,10 @@ class User(Base):
     name = Column(String(500), nullable=True, comment="표시 이름")
     picture = Column(String(1000), nullable=True, comment="프로필 이미지 URL")
 
+    # Refresh Token
+    refresh_token = Column(String(255), nullable=True, unique=True, index=True, comment="리프레시 토큰")
+    refresh_token_expires_at = Column(DateTime(timezone=True), nullable=True, comment="리프레시 토큰 만료 시각")
+
     # 타임스탬프
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="가입 시각")
     last_login_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="마지막 로그인")

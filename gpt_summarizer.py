@@ -7,6 +7,15 @@ from dotenv import load_dotenv
 # Claude 모델 목록
 CLAUDE_MODELS = ["claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001"]
 
+# 시스템 프롬프트
+SYSTEM_PROMPT = """당신은 전문적인 회의록 작성 비서입니다.
+
+핵심 원칙:
+- 회의에서 논의된 세부 내용을 절대 생략하지 않습니다.
+- 모든 발언과 논의 사항을 빠짐없이 포착하되, 체계적으로 구조화합니다.
+- 원본 텍스트에 등장하는 구체적인 수치, 이름, 날짜, 기술 용어 등은 반드시 포함합니다.
+- bullet point 계층 구조를 활용하여 가독성을 높입니다."""
+
 
 class GPTSummarizer:
     def __init__(self):
@@ -65,7 +74,7 @@ class GPTSummarizer:
             "messages": [
                 {
                     "role": "system",
-                    "content": "당신은 전문적인 회의록 작성 비서입니다. 회의 내용을 명확하고 체계적으로 정리합니다.",
+                    "content": SYSTEM_PROMPT,
                 },
                 {"role": "user", "content": prompt},
             ],
@@ -99,8 +108,8 @@ class GPTSummarizer:
 
         response = await self.anthropic_client.messages.create(
             model=model,
-            max_tokens=4096,
-            system="당신은 전문적인 회의록 작성 비서입니다. 회의 내용을 명확하고 체계적으로 정리합니다.",
+            max_tokens=8192,
+            system=SYSTEM_PROMPT,
             messages=[
                 {"role": "user", "content": prompt}
             ]
@@ -149,11 +158,34 @@ class GPTSummarizer:
         return f"""{context_section}{past_context_section}다음은 회의 중 녹음된 음성을 텍스트로 변환한 내용입니다.
 이를 읽기 쉽고 체계적인 회의록으로 정리해주세요.
 
+**중요 지침:**
+- 원본 텍스트에 포함된 세부 논의 내용, 구체적인 사례, 수치, 의견 등을 빠뜨리지 마세요.
+- 각 항목은 bullet point(•)와 하위 bullet point(-)를 사용하여 계층적으로 정리하세요.
+- 누가 무엇을 말했는지 파악 가능하면 발언자를 명시하세요.
+- 단순 요약이 아니라, 논의의 맥락과 근거까지 포함하세요.
+
 다음 형식으로 작성해주세요:
-1. **회의 주제**: 회의의 주요 목적과 주제
-2. **주요 논의 사항**: 토론된 핵심 내용들을 bullet point로 정리
-3. **결정 사항**: 회의에서 내린 결정들
-4. **액션 아이템**: 향후 진행해야 할 작업들 (담당자가 언급되었다면 포함)
+
+## 1. 회의 주제
+회의의 주요 목적과 주제를 간결하게 서술
+
+## 2. 주요 논의 사항
+논의된 모든 내용을 주제별로 분류하여 정리합니다. 각 주제 아래 세부 내용을 빠짐없이 기록하세요.
+• 주요 주제 1
+  - 세부 논의 내용
+  - 구체적 수치나 사례
+  - 관련 의견 및 반론
+• 주요 주제 2
+  - ...
+
+## 3. 결정 사항
+회의에서 확정된 결정들을 명확하게 나열
+• 결정 1
+• 결정 2
+
+## 4. 액션 아이템
+향후 진행해야 할 작업들 (담당자, 기한이 언급되었다면 반드시 포함)
+• [담당자] 작업 내용 (기한: ~)
 
 원본 텍스트:
 {text}
