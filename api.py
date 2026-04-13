@@ -57,9 +57,8 @@ MODEL_PRICING = {
     "llama-4-scout": {"input": 0.08, "output": 0.30},
 }
 
-# 사용량 제한 (환경변수로 설정 가능) — STT 분(minutes) 단위만 적용
+# 사용량 제한 (환경변수로 설정 가능) — STT 분(minutes) 단위, 일일 한도만 적용
 DAILY_STT_LIMIT_MINUTES = int(os.getenv("DAILY_STT_LIMIT_MINUTES", "300"))
-MONTHLY_STT_LIMIT_MINUTES = int(os.getenv("MONTHLY_STT_LIMIT_MINUTES", "600"))
 
 
 def calculate_stt_cost(audio_duration_seconds: float) -> float:
@@ -87,14 +86,6 @@ def check_usage_limit(db: Session, user_id: int, audio_minutes: float = 0.0):
         raise HTTPException(
             status_code=429,
             detail=f"일일 사용 한도({DAILY_STT_LIMIT_MINUTES}분)를 초과합니다. 잔여: {remaining:.0f}분. 내일 다시 시도해주세요."
-        )
-
-    monthly_used = crud.get_usage_minutes(db, user_id, "stt", period="monthly")
-    if monthly_used + audio_minutes > MONTHLY_STT_LIMIT_MINUTES:
-        remaining = max(0, MONTHLY_STT_LIMIT_MINUTES - monthly_used)
-        raise HTTPException(
-            status_code=429,
-            detail=f"월간 사용 한도({MONTHLY_STT_LIMIT_MINUTES}분)를 초과합니다. 잔여: {remaining:.0f}분."
         )
 
 
@@ -393,7 +384,7 @@ async def get_usage(
         "stt": {
             "unit": "minutes",
             "daily": {"used": round(daily_stt_minutes, 1), "limit": DAILY_STT_LIMIT_MINUTES},
-            "monthly": {"used": round(monthly_stt_minutes, 1), "limit": MONTHLY_STT_LIMIT_MINUTES},
+            "monthly": {"used": round(monthly_stt_minutes, 1), "limit": None},
         },
         "monthly_cost": round(monthly_cost, 4),
     }
