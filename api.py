@@ -849,16 +849,43 @@ async def get_transcript_summaries(
     return {"success": True, "count": len(summaries), "summaries": summaries}
 
 
+def _serialize_summary_for_list(record) -> dict:
+    """대시보드 목록용 요약 직렬화 (transcript 메타 + 버전 수 포함)"""
+    transcript = record.transcript
+    version_count = len(record.versions) if record.versions is not None else 1
+    return {
+        "id": record.id,
+        "transcript_id": record.transcript_id,
+        "gpt_model": record.gpt_model,
+        "summary_preview": (record.summary or "")[:200],
+        "created_at": record.created_at.isoformat() if record.created_at else None,
+        "version_count": version_count,
+        "is_edited": version_count > 1,
+        "filename": transcript.filename if transcript else None,
+        "meeting_title": transcript.meeting_title if transcript else None,
+        "project_name": transcript.project_name if transcript else None,
+    }
+
+
 @app.get("/summaries")
 async def get_summaries(
     skip: int = 0,
     limit: int = 20,
+    q: str = "",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """사용자의 모든 요약 레코드 조회 (페이지네이션)"""
-    records = crud.get_all_summary_records(db, current_user.id, skip=skip, limit=limit)
-    return {"success": True, "count": len(records), "records": records}
+    """사용자의 모든 요약 레코드 조회 (페이지네이션 + 검색).
+    q 파라미터가 있으면 파일명/회의제목/프로젝트명/요약본문에서 검색한다."""
+    if q and q.strip():
+        records = crud.search_summary_records(db, current_user.id, q.strip(), skip=skip, limit=limit)
+    else:
+        records = crud.get_all_summary_records(db, current_user.id, skip=skip, limit=limit)
+    return {
+        "success": True,
+        "count": len(records),
+        "records": [_serialize_summary_for_list(r) for r in records],
+    }
 
 
 @app.get("/summaries/{summary_id}")
@@ -871,7 +898,21 @@ async def get_summary(
     record = crud.get_summary_record(db, summary_id, current_user.id)
     if not record:
         raise HTTPException(status_code=404, detail="Summary 레코드를 찾을 수 없습니다")
-    return {"success": True, "record": record}
+    transcript = record.transcript
+    return {
+        "success": True,
+        "record": {
+            "id": record.id,
+            "transcript_id": record.transcript_id,
+            "summary": record.summary,
+            "gpt_model": record.gpt_model,
+            "created_at": record.created_at.isoformat() if record.created_at else None,
+            "transcript": transcript.transcript if transcript else None,
+            "filename": transcript.filename if transcript else None,
+            "meeting_title": transcript.meeting_title if transcript else None,
+            "project_name": transcript.project_name if transcript else None,
+        },
+    }
 
 
 @app.put("/summaries/{summary_id}")
@@ -881,11 +922,67 @@ async def update_summary(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """요약 텍스트 편집 (소유권 확인)"""
+    """요약 텍스트 편집 (소유권 확인). 변경 시 새 버전이 자동 누적된다."""
     record = crud.update_summary_text(db, summary_id, current_user.id, body.summary)
     if not record:
         raise HTTPException(status_code=404, detail="Summary 레코드를 찾을 수 없습니다")
-    return {"success": True, "summary_id": record.id, "summary": record.summary}
+    version_count = len(record.versions) if record.versions is not None else 1
+    return {
+        "success": True,
+        "summary_id": record.id,
+        "summary": record.summary,
+        "version_count": version_count,
+        "latest_version_no": version_count,
+    }
+
+
+@app.get("/summaries/{summary_id}/versions")
+async def list_summary_versions(
+    summary_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """요약의 모든 버전 이력 조회 (소유권 확인)"""
+    versions = crud.get_summary_versions(db, summary_id, current_user.id)
+    if versions is None:
+        raise HTTPException(status_code=404, detail="Summary 레코드를 찾을 수 없습니다")
+    return {
+        "success": True,
+        "summary_id": summary_id,
+        "count": len(versions),
+        "versions": [
+            {
+                "version_no": v.version_no,
+                "source": v.source,
+                "content": v.content,
+                "created_at": v.created_at.isoformat() if v.created_at else None,
+            }
+            for v in versions
+        ],
+    }
+
+
+@app.get("/summaries/{summary_id}/versions/{version_no}")
+async def get_summary_version(
+    summary_id: int,
+    version_no: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """특정 버전 단건 조회 (소유권 확인)"""
+    version = crud.get_summary_version(db, summary_id, version_no, current_user.id)
+    if not version:
+        raise HTTPException(status_code=404, detail="해당 버전을 찾을 수 없습니다")
+    return {
+        "success": True,
+        "summary_id": summary_id,
+        "version": {
+            "version_no": version.version_no,
+            "source": version.source,
+            "content": version.content,
+            "created_at": version.created_at.isoformat() if version.created_at else None,
+        },
+    }
 
 
 @app.post("/summaries/{summary_id}/send-email")

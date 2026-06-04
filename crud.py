@@ -4,7 +4,15 @@ CRUD (Create, Read, Update, Delete) 작업
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sa_func
-from models import TranscriptRecord, SummaryRecord, User, UsageRecord
+from models import (
+    TranscriptRecord,
+    SummaryRecord,
+    SummaryVersion,
+    User,
+    UsageRecord,
+    VERSION_SOURCE_AI_INITIAL,
+    VERSION_SOURCE_USER_EDIT,
+)
 from typing import List, Optional
 
 
@@ -233,7 +241,7 @@ def create_summary_record(
     output_tokens: Optional[int] = None,
     llm_cost: Optional[float] = None
 ) -> SummaryRecord:
-    """새 GPT 요약 레코드 생성"""
+    """새 GPT 요약 레코드 생성 + v1(ai_initial) 버전 동시 생성"""
     record = SummaryRecord(
         transcript_id=transcript_id,
         summary=summary,
@@ -244,6 +252,15 @@ def create_summary_record(
         llm_cost=llm_cost
     )
     db.add(record)
+    db.flush()  # record.id 확보
+
+    v1 = SummaryVersion(
+        summary_id=record.id,
+        version_no=1,
+        content=summary,
+        source=VERSION_SOURCE_AI_INITIAL,
+    )
+    db.add(v1)
     db.commit()
     db.refresh(record)
     return record
@@ -302,17 +319,70 @@ def update_summary_text(
     user_id: int,
     new_summary: str,
 ) -> Optional[SummaryRecord]:
-    """요약 텍스트 업데이트 (소유권 확인)"""
+    """요약 텍스트 업데이트 (소유권 확인).
+    이전 본문과 동일하면 새 버전을 만들지 않고 기존 레코드를 그대로 반환한다.
+    다르면 user_edit 버전을 append 하고 summary_records.summary는 최신본 포인터로 갱신한다.
+    """
     record = db.query(SummaryRecord).join(TranscriptRecord).filter(
         SummaryRecord.id == summary_id,
         TranscriptRecord.user_id == user_id,
     ).first()
     if not record:
         return None
+
+    if record.summary == new_summary:
+        return record
+
+    latest_version_no = db.query(sa_func.coalesce(sa_func.max(SummaryVersion.version_no), 0)).filter(
+        SummaryVersion.summary_id == summary_id,
+    ).scalar() or 0
+
+    next_version = SummaryVersion(
+        summary_id=summary_id,
+        version_no=latest_version_no + 1,
+        content=new_summary,
+        source=VERSION_SOURCE_USER_EDIT,
+    )
+    db.add(next_version)
     record.summary = new_summary
     db.commit()
     db.refresh(record)
     return record
+
+
+def get_summary_versions(
+    db: Session,
+    summary_id: int,
+    user_id: int,
+) -> Optional[List[SummaryVersion]]:
+    """특정 요약의 모든 버전 조회 (소유권 확인).
+    반환값 None은 권한 없음/존재하지 않음을 의미."""
+    summary = db.query(SummaryRecord).join(TranscriptRecord).filter(
+        SummaryRecord.id == summary_id,
+        TranscriptRecord.user_id == user_id,
+    ).first()
+    if not summary:
+        return None
+
+    return db.query(SummaryVersion).filter(
+        SummaryVersion.summary_id == summary_id,
+    ).order_by(SummaryVersion.version_no.asc()).all()
+
+
+def get_summary_version(
+    db: Session,
+    summary_id: int,
+    version_no: int,
+    user_id: int,
+) -> Optional[SummaryVersion]:
+    """특정 버전 단건 조회 (소유권 확인)"""
+    return db.query(SummaryVersion).join(
+        SummaryRecord, SummaryVersion.summary_id == SummaryRecord.id
+    ).join(TranscriptRecord).filter(
+        SummaryVersion.summary_id == summary_id,
+        SummaryVersion.version_no == version_no,
+        TranscriptRecord.user_id == user_id,
+    ).first()
 
 
 def search_summary_records(
@@ -322,9 +392,12 @@ def search_summary_records(
     skip: int = 0,
     limit: int = 100
 ) -> List[SummaryRecord]:
-    """키워드로 사용자의 요약 레코드 검색"""
+    """키워드로 사용자의 요약 레코드 검색 (요약본문/파일명/회의제목/프로젝트명)"""
     search_pattern = f"%{keyword}%"
     return db.query(SummaryRecord).join(TranscriptRecord).filter(
         TranscriptRecord.user_id == user_id,
-        SummaryRecord.summary.ilike(search_pattern)
+        (SummaryRecord.summary.ilike(search_pattern)) |
+        (TranscriptRecord.filename.ilike(search_pattern)) |
+        (TranscriptRecord.meeting_title.ilike(search_pattern)) |
+        (TranscriptRecord.project_name.ilike(search_pattern))
     ).order_by(SummaryRecord.created_at.desc()).offset(skip).limit(limit).all()

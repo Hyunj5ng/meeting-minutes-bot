@@ -1125,3 +1125,302 @@ body {
     font-size: 0.8125rem;
     color: var(--text-secondary);
 }
+
+/* ============================================
+   뷰 전환 네비게이션 (생성 / 대시보드)
+   ============================================ */
+.view-nav {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    margin-top: 1.25rem;
+    flex-wrap: wrap;
+}
+
+.view-nav-btn {
+    background: rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(8px);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 0.55rem 1.1rem;
+    border-radius: 2rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s ease;
+}
+
+.view-nav-btn:hover {
+    background: rgba(255, 255, 255, 0.32);
+}
+
+.view-nav-btn.active {
+    background: white;
+    color: var(--text-primary);
+    box-shadow: var(--shadow-sm);
+}
+
+/* ============================================
+   대시보드 (내 회의록 목록)
+   ============================================ */
+.dashboard-view {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.dashboard-card {
+    padding: 1.5rem 1.75rem 2rem;
+}
+
+.dashboard-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+}
+
+.dashboard-header h3 {
+    font-size: 1.25rem;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.dashboard-search {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.6rem;
+    padding: 0.4rem 0.75rem;
+    flex: 1 1 280px;
+    max-width: 420px;
+    color: var(--text-secondary);
+}
+
+.dashboard-search input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    outline: none;
+    font-size: 0.9rem;
+    padding: 0.25rem 0;
+    color: var(--text-primary);
+}
+
+.dashboard-status {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    padding: 0.5rem 0 1rem;
+}
+
+.dashboard-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.dashboard-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 0.9rem 1rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.6rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.dashboard-item:hover {
+    border-color: var(--primary-color);
+    box-shadow: var(--shadow-sm);
+    transform: translateY(-1px);
+}
+
+.dashboard-item-title {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.98rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.dashboard-item-meta {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.dashboard-item-meta .meta-chip {
+    background: white;
+    border: 1px solid var(--border-color);
+    padding: 0.1rem 0.55rem;
+    border-radius: 999px;
+}
+
+.dashboard-item-preview {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.edited-badge {
+    background: var(--accent-warm);
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    letter-spacing: 0.02em;
+}
+
+/* ============================================
+   버전 선택 + diff 뷰
+   ============================================ */
+.version-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding: 0.65rem 0.85rem;
+    margin: 0.75rem 0 1rem;
+    background: var(--primary-light);
+    border: 1px solid var(--border-color);
+    border-radius: 0.55rem;
+}
+
+.version-label {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.version-select {
+    min-width: 220px;
+    padding: 0.4rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.4rem;
+    background: white;
+    font-size: 0.9rem;
+}
+
+.btn-link {
+    background: none;
+    border: none;
+    color: var(--primary-color);
+    font-weight: 600;
+    font-size: 0.875rem;
+    cursor: pointer;
+    padding: 0.25rem 0.25rem;
+    text-decoration: underline;
+}
+
+.btn-link:hover {
+    color: var(--primary-hover);
+}
+
+.version-badge {
+    margin-left: auto;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.version-badge.is-ai {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+.version-badge.is-edit {
+    color: var(--accent-warm);
+    font-weight: 600;
+}
+
+.diff-view {
+    border: 1px solid var(--border-color);
+    border-radius: 0.55rem;
+    overflow: hidden;
+    margin-bottom: 1rem;
+    background: white;
+}
+
+.diff-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.9rem;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.diff-legend {
+    display: flex;
+    gap: 0.75rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+}
+
+.diff-legend-item.diff-added {
+    color: #047857;
+}
+
+.diff-legend-item.diff-removed {
+    color: #B91C1C;
+}
+
+.diff-pre {
+    margin: 0;
+    padding: 0.75rem 1rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.85rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 360px;
+    overflow-y: auto;
+}
+
+.diff-pre .diff-line {
+    display: block;
+}
+
+.diff-pre .diff-line.added {
+    background: #D1FAE5;
+    color: #064E3B;
+}
+
+.diff-pre .diff-line.removed {
+    background: #FEE2E2;
+    color: #7F1D1D;
+    text-decoration: line-through;
+    text-decoration-color: rgba(127, 29, 29, 0.4);
+}
+
+.diff-pre .diff-line.context {
+    color: var(--text-secondary);
+}
+
+/* 비편집 모드 안내 */
+.viewing-old-notice {
+    background: #FEF3C7;
+    border: 1px solid #FCD34D;
+    color: #92400E;
+    padding: 0.5rem 0.85rem;
+    border-radius: 0.45rem;
+    font-size: 0.85rem;
+    margin-bottom: 0.75rem;
+}

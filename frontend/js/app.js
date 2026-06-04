@@ -37,8 +37,19 @@ let transcriptData = null;
 let resultData = null;
 let audioDuration = 0; // 오디오 길이 (초)
 let summaryHistory = []; // 여러 요약 결과 저장
-let currentSummaryMarkdown = ''; // 현재 요약 마크다운 원본
+let currentSummaryMarkdown = ''; // 현재 요약 마크다운 원본 (지금 화면에 표시되는 것)
 let isEditMode = false;
+
+// 버전 관리 상태
+let currentSummaryId = null;          // 현재 화면에 있는 요약 ID
+let currentVersions = [];             // [{version_no, source, content, created_at}, ...] (오름차순)
+let currentVersionNo = null;          // 지금 보고 있는 버전 번호
+let isViewingLatest = true;           // 최신 버전 보고 있는지 (편집 가능 여부 판단용)
+let isDiffOpen = false;
+
+// 대시보드 상태
+let dashboardSearchTimer = null;
+let currentView = 'create';           // 'create' | 'dashboard'
 
 // 인증 상태
 let currentUser = null;
@@ -345,13 +356,373 @@ function showMainApp() {
         }
     }
 
-    // 사용량 바 즉시 표시
+    // 사용량 바 + 뷰 전환 네비 즉시 표시
     document.getElementById('usageBar').style.display = 'flex';
+    const viewNav = document.getElementById('viewNav');
+    if (viewNav) viewNav.style.display = 'flex';
 
     // DOM 요소 초기화
     initDomElements();
     setupEventListeners();
     fetchUsageInfo();
+}
+
+// ============================================
+// 뷰 전환 (생성 / 대시보드)
+// ============================================
+
+function switchView(view) {
+    currentView = view;
+    const createView = document.getElementById('createView');
+    const dashboardView = document.getElementById('dashboardView');
+    const navCreate = document.getElementById('navCreate');
+    const navDashboard = document.getElementById('navDashboard');
+
+    if (view === 'create') {
+        if (createView) createView.style.display = '';
+        if (dashboardView) dashboardView.style.display = 'none';
+        navCreate?.classList.add('active');
+        navDashboard?.classList.remove('active');
+    } else {
+        if (createView) createView.style.display = 'none';
+        if (dashboardView) dashboardView.style.display = '';
+        navCreate?.classList.remove('active');
+        navDashboard?.classList.add('active');
+        // 진입 시 자동 로드
+        loadDashboard('');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ============================================
+// 대시보드 (내 회의록 목록)
+// ============================================
+
+async function loadDashboard(query) {
+    const statusEl = document.getElementById('dashboardStatus');
+    const listEl = document.getElementById('dashboardList');
+    if (!listEl) return;
+
+    statusEl.textContent = '불러오는 중...';
+    listEl.innerHTML = '';
+
+    try {
+        const url = `${API_BASE_URL}/summaries?limit=100${query ? `&q=${encodeURIComponent(query)}` : ''}`;
+        const res = await authFetch(url);
+        if (!res.ok) throw new Error('목록 조회 실패');
+        const data = await res.json();
+        const records = data.records || [];
+
+        if (records.length === 0) {
+            statusEl.textContent = query
+                ? `"${query}"에 해당하는 회의록이 없습니다.`
+                : '아직 회의록이 없습니다. 첫 회의록을 만들어보세요!';
+            return;
+        }
+
+        statusEl.textContent = `총 ${records.length}건`;
+        renderDashboardList(records);
+    } catch (err) {
+        console.error(err);
+        statusEl.textContent = '목록을 불러오지 못했습니다: ' + err.message;
+    }
+}
+
+function renderDashboardList(records) {
+    const listEl = document.getElementById('dashboardList');
+    listEl.innerHTML = '';
+
+    records.forEach(rec => {
+        const item = document.createElement('div');
+        item.className = 'dashboard-item';
+        item.dataset.summaryId = rec.id;
+
+        const title = rec.meeting_title || rec.filename || `요약 #${rec.id}`;
+        const dateStr = rec.created_at ? formatDateKo(rec.created_at) : '';
+        const editedBadge = rec.is_edited
+            ? `<span class="edited-badge">수정됨 v${rec.version_count}</span>`
+            : '';
+
+        const metaChips = [];
+        if (rec.project_name) metaChips.push(`<span class="meta-chip">${escapeHtml(rec.project_name)}</span>`);
+        if (rec.gpt_model) metaChips.push(`<span class="meta-chip">${escapeHtml(rec.gpt_model)}</span>`);
+        if (dateStr) metaChips.push(`<span class="meta-chip">${dateStr}</span>`);
+
+        item.innerHTML = `
+            <div class="dashboard-item-title">
+                ${escapeHtml(title)}
+                ${editedBadge}
+            </div>
+            <div class="dashboard-item-meta">${metaChips.join('')}</div>
+            <div class="dashboard-item-preview">${escapeHtml(rec.summary_preview || '')}</div>
+        `;
+
+        item.addEventListener('click', () => openSummaryFromDashboard(rec.id));
+        listEl.appendChild(item);
+    });
+}
+
+function escapeHtml(s) {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function formatDateKo(isoStr) {
+    try {
+        const d = new Date(isoStr);
+        const yy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mi = String(d.getMinutes()).padStart(2, '0');
+        return `${yy}-${mm}-${dd} ${hh}:${mi}`;
+    } catch {
+        return isoStr;
+    }
+}
+
+// 대시보드에서 항목 클릭 → 생성 뷰로 전환하여 결과 카드 표시
+async function openSummaryFromDashboard(summaryId) {
+    try {
+        const [sumRes, verRes] = await Promise.all([
+            authFetch(`${API_BASE_URL}/summaries/${summaryId}`),
+            authFetch(`${API_BASE_URL}/summaries/${summaryId}/versions`),
+        ]);
+        if (!sumRes.ok) throw new Error('요약을 불러오지 못했습니다');
+        if (!verRes.ok) throw new Error('버전 이력을 불러오지 못했습니다');
+
+        const sumData = await sumRes.json();
+        const verData = await verRes.json();
+        const record = sumData.record;
+
+        // 생성 뷰로 이동 (상단 업로드 카드는 접고 결과만 노출)
+        switchView('create');
+        collapseUploadCard();
+        const stepperCard = document.getElementById('stepperCard');
+        if (stepperCard) stepperCard.style.display = 'none';
+
+        resultData = {
+            summary: record.summary,
+            summaryId: record.id,
+            transcript: record.transcript || '',
+            gptModel: record.gpt_model,
+            meetingTitle: record.meeting_title,
+            fileName: record.filename,
+        };
+        currentSummaryId = record.id;
+        currentVersions = verData.versions || [];
+        currentVersionNo = currentVersions.length > 0
+            ? currentVersions[currentVersions.length - 1].version_no
+            : null;
+        isViewingLatest = true;
+        isDiffOpen = false;
+
+        // 결과 헤더 제목 갱신
+        const titleEl = document.getElementById('resultTitle');
+        if (titleEl) {
+            titleEl.textContent = record.meeting_title || record.filename || '회의록';
+        }
+
+        showResult(resultData);
+        renderVersionBar();
+    } catch (err) {
+        console.error(err);
+        alert('회의록을 여는 데 실패했습니다: ' + err.message);
+    }
+}
+
+// ============================================
+// 버전 드롭다운 + diff
+// ============================================
+
+function renderVersionBar() {
+    const bar = document.getElementById('versionBar');
+    const select = document.getElementById('versionSelect');
+    const badge = document.getElementById('versionBadge');
+    const toggleDiffBtn = document.getElementById('toggleDiffBtn');
+    if (!bar || !select) return;
+
+    if (!currentVersions || currentVersions.length === 0) {
+        bar.style.display = 'none';
+        return;
+    }
+
+    bar.style.display = 'flex';
+    select.innerHTML = '';
+    // 최신 → 과거 순으로 옵션 구성
+    const reversed = [...currentVersions].reverse();
+    reversed.forEach((v, idx) => {
+        const isLatest = idx === 0;
+        const sourceLabel = v.source === 'ai_initial' ? 'AI 원본' : '내 수정';
+        const dateStr = v.created_at ? formatDateKo(v.created_at) : '';
+        const latestTag = isLatest ? ' · 최신' : '';
+        const opt = document.createElement('option');
+        opt.value = String(v.version_no);
+        opt.textContent = `v${v.version_no} (${sourceLabel}${latestTag}) — ${dateStr}`;
+        select.appendChild(opt);
+    });
+
+    select.value = String(currentVersionNo);
+    updateVersionBadge();
+
+    // 첫 버전(v1)이면 diff 버튼 비활성화
+    if (toggleDiffBtn) {
+        const hasPrevious = currentVersionNo > 1;
+        toggleDiffBtn.disabled = !hasPrevious;
+        toggleDiffBtn.style.opacity = hasPrevious ? '1' : '0.4';
+        toggleDiffBtn.style.cursor = hasPrevious ? 'pointer' : 'not-allowed';
+        toggleDiffBtn.textContent = isDiffOpen ? '차이 숨기기' : '이전 버전과 차이 보기';
+    }
+
+    // diff 영역 갱신
+    const diffView = document.getElementById('diffView');
+    if (diffView) diffView.style.display = isDiffOpen && currentVersionNo > 1 ? 'block' : 'none';
+    if (isDiffOpen && currentVersionNo > 1) renderDiff();
+
+    // 편집 버튼 가능 여부
+    refreshEditButtonState();
+}
+
+function updateVersionBadge() {
+    const badge = document.getElementById('versionBadge');
+    if (!badge) return;
+    const current = currentVersions.find(v => v.version_no === currentVersionNo);
+    if (!current) {
+        badge.textContent = '';
+        badge.className = 'version-badge';
+        return;
+    }
+    if (current.source === 'ai_initial') {
+        badge.textContent = 'AI가 처음 만든 버전입니다';
+        badge.className = 'version-badge is-ai';
+    } else {
+        badge.textContent = '내가 수정한 버전입니다';
+        badge.className = 'version-badge is-edit';
+    }
+}
+
+function onVersionSelectChange(e) {
+    const newVerNo = parseInt(e.target.value, 10);
+    if (Number.isNaN(newVerNo)) return;
+
+    const v = currentVersions.find(x => x.version_no === newVerNo);
+    if (!v) return;
+
+    currentVersionNo = newVerNo;
+    const latestNo = currentVersions[currentVersions.length - 1].version_no;
+    isViewingLatest = newVerNo === latestNo;
+
+    // 화면 본문 갱신
+    currentSummaryMarkdown = v.content;
+    const summaryElement = document.getElementById('summaryText');
+    if (summaryElement) summaryElement.innerHTML = marked.parse(v.content);
+
+    // 이전 버전 보기 안내
+    let notice = document.getElementById('viewingOldNotice');
+    const summaryContent = document.getElementById('summaryContent');
+    if (!isViewingLatest) {
+        if (!notice && summaryContent) {
+            notice = document.createElement('div');
+            notice.id = 'viewingOldNotice';
+            notice.className = 'viewing-old-notice';
+            notice.textContent = '과거 버전을 보고 있습니다. 편집은 최신 버전에서만 가능합니다.';
+            summaryContent.insertBefore(notice, summaryContent.firstChild);
+        }
+    } else if (notice) {
+        notice.remove();
+    }
+
+    updateVersionBadge();
+    refreshEditButtonState();
+
+    // 첫 버전이면 diff 자동 닫기
+    const toggleDiffBtn = document.getElementById('toggleDiffBtn');
+    if (currentVersionNo <= 1) {
+        isDiffOpen = false;
+        const diffView = document.getElementById('diffView');
+        if (diffView) diffView.style.display = 'none';
+        if (toggleDiffBtn) {
+            toggleDiffBtn.disabled = true;
+            toggleDiffBtn.style.opacity = '0.4';
+            toggleDiffBtn.style.cursor = 'not-allowed';
+            toggleDiffBtn.textContent = '이전 버전과 차이 보기';
+        }
+    } else {
+        if (toggleDiffBtn) {
+            toggleDiffBtn.disabled = false;
+            toggleDiffBtn.style.opacity = '1';
+            toggleDiffBtn.style.cursor = 'pointer';
+        }
+        if (isDiffOpen) renderDiff();
+    }
+}
+
+function toggleDiff() {
+    if (!currentVersionNo || currentVersionNo <= 1) return;
+    isDiffOpen = !isDiffOpen;
+    const diffView = document.getElementById('diffView');
+    const btn = document.getElementById('toggleDiffBtn');
+    if (diffView) diffView.style.display = isDiffOpen ? 'block' : 'none';
+    if (btn) btn.textContent = isDiffOpen ? '차이 숨기기' : '이전 버전과 차이 보기';
+    if (isDiffOpen) renderDiff();
+}
+
+function renderDiff() {
+    if (!currentVersionNo || currentVersionNo <= 1) return;
+    const prev = currentVersions.find(v => v.version_no === currentVersionNo - 1);
+    const curr = currentVersions.find(v => v.version_no === currentVersionNo);
+    if (!prev || !curr) return;
+
+    const headerText = document.getElementById('diffHeaderText');
+    if (headerText) {
+        headerText.textContent = `v${prev.version_no} → v${curr.version_no}`;
+    }
+
+    const pre = document.getElementById('diffContent');
+    if (!pre) return;
+    pre.innerHTML = '';
+
+    if (typeof Diff === 'undefined') {
+        pre.textContent = '(diff 라이브러리 로드 실패)';
+        return;
+    }
+
+    const parts = Diff.diffLines(prev.content || '', curr.content || '');
+    parts.forEach(part => {
+        const lines = part.value.split('\n');
+        // 마지막 빈 라인 제거 (split로 인한 trailing)
+        if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+
+        const cls = part.added ? 'added' : (part.removed ? 'removed' : 'context');
+        const prefix = part.added ? '+ ' : (part.removed ? '− ' : '  ');
+
+        lines.forEach(line => {
+            const span = document.createElement('span');
+            span.className = `diff-line ${cls}`;
+            span.textContent = prefix + line;
+            pre.appendChild(span);
+        });
+    });
+}
+
+function refreshEditButtonState() {
+    const editBtn = document.getElementById('editBtn');
+    if (!editBtn) return;
+    if (isViewingLatest) {
+        editBtn.disabled = false;
+        editBtn.style.opacity = '1';
+        editBtn.style.cursor = 'pointer';
+        editBtn.title = '';
+    } else {
+        editBtn.disabled = true;
+        editBtn.style.opacity = '0.5';
+        editBtn.style.cursor = 'not-allowed';
+        editBtn.title = '편집은 최신 버전에서만 가능합니다';
+    }
 }
 
 // 인증된 fetch 래퍼 (401 시 자동 토큰 갱신 + 재시도)
@@ -466,6 +837,28 @@ function setupEventListeners() {
             }
         });
     }
+
+    // 뷰 전환 네비
+    const navCreate = document.getElementById('navCreate');
+    const navDashboard = document.getElementById('navDashboard');
+    if (navCreate) navCreate.addEventListener('click', () => switchView('create'));
+    if (navDashboard) navDashboard.addEventListener('click', () => switchView('dashboard'));
+
+    // 대시보드 검색 (300ms 디바운스)
+    const dashboardSearchInput = document.getElementById('dashboardSearch');
+    if (dashboardSearchInput) {
+        dashboardSearchInput.addEventListener('input', (e) => {
+            const q = e.target.value.trim();
+            if (dashboardSearchTimer) clearTimeout(dashboardSearchTimer);
+            dashboardSearchTimer = setTimeout(() => loadDashboard(q), 300);
+        });
+    }
+
+    // 버전 드롭다운 + diff 토글
+    const versionSelect = document.getElementById('versionSelect');
+    if (versionSelect) versionSelect.addEventListener('change', onVersionSelectChange);
+    const toggleDiffBtn = document.getElementById('toggleDiffBtn');
+    if (toggleDiffBtn) toggleDiffBtn.addEventListener('click', toggleDiff);
 }
 
 // 드래그 앤 드롭 핸들러
@@ -747,9 +1140,24 @@ async function doSummarize() {
             createdAt: new Date().toISOString()
         });
 
+        // 버전 상태 초기화 (방금 만들어진 v1=ai_initial)
+        currentSummaryId = data.summary_id;
+        currentVersions = [{
+            version_no: 1,
+            source: 'ai_initial',
+            content: data.summary,
+            created_at: new Date().toISOString(),
+        }];
+        currentVersionNo = 1;
+        isViewingLatest = true;
+        isDiffOpen = false;
+
         // 결과 표시
         await new Promise(resolve => setTimeout(resolve, 500));
+        const titleEl = document.getElementById('resultTitle');
+        if (titleEl) titleEl.textContent = '회의록 생성 완료!';
         showResult(resultData);
+        renderVersionBar();
 
         // 이메일 자동 발송
         const autoEmail = document.getElementById('autoEmailCheckbox');
@@ -897,6 +1305,22 @@ async function saveSummaryEdit() {
         resultData.summary = newSummary;
         document.getElementById('summaryText').innerHTML = marked.parse(newSummary);
 
+        // 버전 이력 재조회하여 드롭다운 갱신
+        try {
+            const verRes = await authFetch(`${API_BASE_URL}/summaries/${resultData.summaryId}/versions`);
+            if (verRes.ok) {
+                const verData = await verRes.json();
+                currentVersions = verData.versions || [];
+                if (currentVersions.length > 0) {
+                    currentVersionNo = currentVersions[currentVersions.length - 1].version_no;
+                    isViewingLatest = true;
+                    renderVersionBar();
+                }
+            }
+        } catch (e) {
+            console.warn('버전 이력 갱신 실패:', e);
+        }
+
         cancelEdit();
     } catch (error) {
         console.error('Save error:', error);
@@ -948,6 +1372,19 @@ function reset() {
     audioDuration = 0;
     summaryHistory = [];
     if (fileInput) fileInput.value = '';
+
+    // 버전 상태 초기화
+    currentSummaryId = null;
+    currentVersions = [];
+    currentVersionNo = null;
+    isViewingLatest = true;
+    isDiffOpen = false;
+    const versionBar = document.getElementById('versionBar');
+    if (versionBar) versionBar.style.display = 'none';
+    const diffView = document.getElementById('diffView');
+    if (diffView) diffView.style.display = 'none';
+    const oldNotice = document.getElementById('viewingOldNotice');
+    if (oldNotice) oldNotice.remove();
 
     // 업로드 카드 펼치기
     expandUploadCard();

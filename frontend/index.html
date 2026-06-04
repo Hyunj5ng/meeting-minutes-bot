@@ -43,12 +43,17 @@
                     <span class="usage-value">오늘 <span id="dailyStt">0</span>/<span id="dailySttLimit">60</span>분</span>
                 </div>
             </div>
+            <!-- 뷰 전환 네비게이션 -->
+            <nav class="view-nav" id="viewNav" style="display: none;">
+                <button class="view-nav-btn active" data-view="create" id="navCreate">새 회의록 만들기</button>
+                <button class="view-nav-btn" data-view="dashboard" id="navDashboard">내 회의록</button>
+            </nav>
         </header>
 
         <!-- 메인 컨텐츠 -->
         <main class="main-content" id="mainContent" style="display: none;">
             <!-- 통합 워크플로우 -->
-            <section class="unified-workflow">
+            <section class="unified-workflow" id="createView">
                 <!-- 업로드 영역 (accordion) -->
                 <div class="workflow-card upload-card" id="uploadCard">
                     <div class="upload-card-header" id="uploadCardHeader">
@@ -229,7 +234,7 @@
                 <!-- 결과 영역 (인라인) -->
                 <div class="workflow-card result-card" id="resultSection" style="display: none;">
                     <div class="result-header">
-                        <h3>회의록 생성 완료!</h3>
+                        <h3 id="resultTitle">회의록 생성 완료!</h3>
                         <button class="btn-copy" id="copyBtn">
                             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <rect x="6" y="6" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
@@ -237,6 +242,26 @@
                             </svg>
                             텍스트 복사
                         </button>
+                    </div>
+
+                    <!-- 버전 선택 영역 -->
+                    <div class="version-bar" id="versionBar" style="display: none;">
+                        <label class="version-label" for="versionSelect">버전</label>
+                        <select id="versionSelect" class="select-input version-select"></select>
+                        <button class="btn-link" id="toggleDiffBtn" type="button">이전 버전과 차이 보기</button>
+                        <span class="version-badge" id="versionBadge"></span>
+                    </div>
+
+                    <!-- diff 뷰 -->
+                    <div class="diff-view" id="diffView" style="display: none;">
+                        <div class="diff-header">
+                            <span id="diffHeaderText">차이</span>
+                            <span class="diff-legend">
+                                <span class="diff-legend-item diff-added">+ 추가</span>
+                                <span class="diff-legend-item diff-removed">− 삭제</span>
+                            </span>
+                        </div>
+                        <pre class="diff-pre" id="diffContent"></pre>
                     </div>
 
                     <!-- 탭 -->
@@ -290,6 +315,24 @@
                     </div>
                 </div>
             </section>
+
+            <!-- 대시보드 뷰 -->
+            <section class="dashboard-view" id="dashboardView" style="display: none;">
+                <div class="workflow-card dashboard-card">
+                    <div class="dashboard-header">
+                        <h3>내 회의록</h3>
+                        <div class="dashboard-search">
+                            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.8"/>
+                                <path d="M14 14L17 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                            </svg>
+                            <input type="text" id="dashboardSearch" class="text-input" placeholder="제목, 파일명, 프로젝트, 본문 검색...">
+                        </div>
+                    </div>
+                    <div class="dashboard-status" id="dashboardStatus">불러오는 중...</div>
+                    <div class="dashboard-list" id="dashboardList"></div>
+                </div>
+            </section>
         </main>
 
         <!-- 푸터 -->
@@ -300,6 +343,8 @@
 
     <!-- Markdown 렌더링 라이브러리 -->
     <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+    <!-- diff 라이브러리 (버전 비교용) -->
+    <script src="https://cdn.jsdelivr.net/npm/diff@5.2.0/dist/diff.min.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

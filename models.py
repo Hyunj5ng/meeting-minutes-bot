@@ -108,9 +108,52 @@ class SummaryRecord(Base):
 
     # 관계 (N:1 - 여러 summary가 하나의 transcript에 속함)
     transcript = relationship("TranscriptRecord", back_populates="summaries")
+    versions = relationship(
+        "SummaryVersion",
+        back_populates="summary",
+        cascade="all, delete-orphan",
+        order_by="SummaryVersion.version_no",
+    )
 
     def __repr__(self):
         return f"<SummaryRecord(id={self.id}, transcript_id={self.transcript_id}, gpt_model='{self.gpt_model}', created_at={self.created_at})>"
+
+
+# 버전 소스 상수
+VERSION_SOURCE_AI_INITIAL = "ai_initial"
+VERSION_SOURCE_USER_EDIT = "user_edit"
+
+
+class SummaryVersion(Base):
+    """요약 버전 이력 (AI 최초 생성본 + 사용자 수정본)"""
+    __tablename__ = "summary_versions"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+
+    summary_id = Column(
+        Integer,
+        ForeignKey("summary_records.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="요약 레코드 ID",
+    )
+    version_no = Column(Integer, nullable=False, comment="버전 번호 (1부터 시작, AI 원본=1)")
+    content = Column(Text, nullable=False, comment="이 버전의 요약 본문")
+    source = Column(
+        String(20),
+        nullable=False,
+        comment="ai_initial | user_edit",
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="생성 시각")
+
+    summary = relationship("SummaryRecord", back_populates="versions")
+
+    __table_args__ = (
+        Index("ix_summary_versions_summary_version", "summary_id", "version_no", unique=True),
+    )
+
+    def __repr__(self):
+        return f"<SummaryVersion(summary_id={self.summary_id}, v={self.version_no}, source='{self.source}')>"
 
 
 class UsageRecord(Base):
