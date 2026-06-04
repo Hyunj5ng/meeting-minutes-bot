@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends, Body
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends, Body, BackgroundTasks, Query
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -22,6 +22,7 @@ from database import get_db, engine, Base
 from models import TranscriptRecord, SummaryRecord, User
 from auth import get_current_user, verify_google_token, create_access_token, create_refresh_token, verify_refresh_token, revoke_refresh_token
 import crud
+import context_learner
 
 
 # ============================================
@@ -30,6 +31,29 @@ import crud
 
 class SummaryUpdateRequest(BaseModel):
     summary: str
+
+
+class ProjectCreateRequest(BaseModel):
+    name: str
+    description: str | None = None
+
+
+class ProjectUpdateRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+
+class ContextEntryCreateRequest(BaseModel):
+    term: str
+    correction: str
+    note: str | None = None
+    project_id: int | None = None  # None이면 개인 컨텍스트
+
+
+class ContextEntryUpdateRequest(BaseModel):
+    term: str | None = None
+    correction: str | None = None
+    note: str | None = None
 
 
 # API 모델별 가격표 (USD per 1M tokens, Whisper는 USD per minute)
@@ -400,7 +424,8 @@ async def transcribe_only(
     whisper_model: WhisperModel = Form(WhisperModel.BASE, description="Whisper API는 단일 모델 사용 (값은 기록용)"),
     audio_duration: float = Form(None, description="오디오 길이 (초)"),
     file_size: int = Form(..., description="파일 크기 (bytes)"),
-    project_name: str = Form("", description="프로젝트명"),
+    project_id: int = Form(None, description="기존 프로젝트 ID (project_name보다 우선)"),
+    project_name: str = Form("", description="프로젝트명 (project_id 없을 때 신규/조회)"),
     meeting_title: str = Form("", description="회의 제목"),
     attendees: str = Form("", description="참석자 (쉼표로 구분)"),
     keywords: str = Form("", description="관련 키워드 (쉼표로 구분)"),
@@ -449,6 +474,20 @@ async def transcribe_only(
         stt_cost = calculate_stt_cost(audio_duration)
         print(f"STT 비용: ${stt_cost:.6f}")
 
+        # 프로젝트 매핑: project_id 우선, 없으면 project_name으로 조회/생성
+        resolved_project = None
+        if project_id is not None:
+            resolved_project = crud.get_project(db, project_id, current_user.id)
+            if not resolved_project:
+                raise HTTPException(status_code=404, detail="지정한 프로젝트를 찾을 수 없습니다")
+        elif project_name and project_name.strip():
+            resolved_project = crud.get_or_create_project_by_name(
+                db, current_user.id, project_name.strip()
+            )
+
+        effective_project_id = resolved_project.id if resolved_project else None
+        effective_project_name = resolved_project.name if resolved_project else (project_name or None)
+
         # DB에 저장 (TranscriptRecord 생성)
         transcript_record = crud.create_transcript_record(
             db=db,
@@ -460,7 +499,8 @@ async def transcribe_only(
             audio_duration=audio_duration,
             stt_processing_time=stt_time,
             stt_cost=stt_cost,
-            project_name=project_name,
+            project_id=effective_project_id,
+            project_name=effective_project_name,
             meeting_title=meeting_title,
             attendees=attendees,
             keywords=keywords
@@ -524,6 +564,21 @@ async def summarize_transcript(
     if transcript_record.keywords:
         context["keywords"] = transcript_record.keywords
 
+    # 글로서리 구성: 개인 컨텍스트 + (해당 프로젝트의 컨텍스트가 있다면)
+    personal_entries = crud.list_context_entries(db, current_user.id, scope="personal")
+    project_entries = []
+    if transcript_record.project_id:
+        project_entries = crud.list_context_entries(
+            db, current_user.id, scope="project", project_id=transcript_record.project_id
+        )
+    # 프로젝트 컨텍스트가 개인 컨텍스트보다 우선 (충돌 시 프로젝트 본을 신뢰)
+    glossary = [
+        {"term": e.term, "correction": e.correction, "note": e.note}
+        for e in (project_entries + personal_entries)
+    ]
+    if glossary:
+        print(f"글로서리 적용: 개인 {len(personal_entries)}건 + 프로젝트 {len(project_entries)}건")
+
     try:
         # RAG: 과거 관련 회의록 검색
         past_context = []
@@ -544,6 +599,7 @@ async def summarize_transcript(
         result = await gpt_summarizer.summarize(
             transcript, model=gpt_model.value, context=context or None,
             past_context=past_context or None,
+            glossary=glossary or None,
         )
         gpt_time = time.time() - start_time
 
@@ -919,14 +975,37 @@ async def get_summary(
 async def update_summary(
     summary_id: int,
     body: SummaryUpdateRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """요약 텍스트 편집 (소유권 확인). 변경 시 새 버전이 자동 누적된다."""
+    """요약 텍스트 편집 (소유권 확인). 변경 시 새 버전이 자동 누적된다.
+    저장 후 백그라운드로 컨텍스트 자동 학습을 트리거한다."""
+    # 변경 전 직전 버전 본문을 미리 잡아둔다 (학습 작업에 사용)
+    pre_summary = None
+    pre_record = crud.get_summary_record(db, summary_id, current_user.id)
+    if pre_record:
+        pre_summary = pre_record.summary
+
     record = crud.update_summary_text(db, summary_id, current_user.id, body.summary)
     if not record:
         raise HTTPException(status_code=404, detail="Summary 레코드를 찾을 수 없습니다")
+
     version_count = len(record.versions) if record.versions is not None else 1
+
+    # 실제로 내용이 바뀐 경우에만 학습 트리거
+    if pre_summary is not None and pre_summary != record.summary:
+        transcript_record = record.transcript
+        background_tasks.add_task(
+            context_learner.run_learning_task,
+            summary_id=record.id,
+            user_id=current_user.id,
+            project_id=transcript_record.project_id if transcript_record else None,
+            project_name=transcript_record.project_name if transcript_record else None,
+            prev_content=pre_summary,
+            curr_content=record.summary,
+        )
+
     return {
         "success": True,
         "summary_id": record.id,
@@ -1035,6 +1114,221 @@ async def search_summaries(
     """키워드로 사용자의 요약 레코드 검색"""
     records = crud.search_summary_records(db, current_user.id, keyword, skip=skip, limit=limit)
     return {"success": True, "count": len(records), "records": records}
+
+
+# ============================================
+# 프로젝트 엔드포인트
+# ============================================
+
+def _serialize_project(project, summary_count: int = 0, context_count: int = 0) -> dict:
+    return {
+        "id": project.id,
+        "name": project.name,
+        "description": project.description,
+        "created_at": project.created_at.isoformat() if project.created_at else None,
+        "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+        "summary_count": summary_count,
+        "context_count": context_count,
+    }
+
+
+@app.get("/projects")
+async def list_projects(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """사용자의 모든 프로젝트 (회의록 수 / 컨텍스트 수 포함)"""
+    projects = crud.get_all_projects(db, current_user.id)
+    summary_counts = crud.get_project_summary_counts(db, current_user.id)
+    return {
+        "success": True,
+        "count": len(projects),
+        "projects": [
+            _serialize_project(
+                p,
+                summary_count=summary_counts.get(p.id, 0),
+                context_count=len(p.context_entries) if p.context_entries is not None else 0,
+            )
+            for p in projects
+        ],
+    }
+
+
+@app.post("/projects")
+async def create_project(
+    body: ProjectCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """새 프로젝트 생성"""
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="프로젝트명을 입력해주세요")
+    project = crud.create_project(
+        db, user_id=current_user.id, name=name, description=body.description
+    )
+    return {"success": True, "project": _serialize_project(project)}
+
+
+@app.get("/projects/{project_id}")
+async def get_project_detail(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """프로젝트 상세: 메타 + 회의록 요약 목록 + 컨텍스트 엔트리"""
+    project = crud.get_project(db, project_id, current_user.id)
+    if not project:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
+
+    # 이 프로젝트에 속한 요약들 (최신순)
+    summaries = db.query(SummaryRecord).join(TranscriptRecord).filter(
+        TranscriptRecord.user_id == current_user.id,
+        TranscriptRecord.project_id == project_id,
+    ).order_by(SummaryRecord.created_at.desc()).limit(100).all()
+
+    contexts = crud.list_context_entries(
+        db, current_user.id, scope="project", project_id=project_id
+    )
+
+    return {
+        "success": True,
+        "project": _serialize_project(
+            project,
+            summary_count=len(summaries),
+            context_count=len(contexts),
+        ),
+        "summaries": [_serialize_summary_for_list(r) for r in summaries],
+        "contexts": [_serialize_context_entry(c) for c in contexts],
+    }
+
+
+@app.put("/projects/{project_id}")
+async def update_project(
+    project_id: int,
+    body: ProjectUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """프로젝트 정보 수정"""
+    project = crud.update_project(
+        db,
+        project_id=project_id,
+        user_id=current_user.id,
+        name=body.name,
+        description=body.description,
+    )
+    if not project:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
+    return {"success": True, "project": _serialize_project(project)}
+
+
+@app.delete("/projects/{project_id}")
+async def delete_project(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """프로젝트 삭제 (소속 회의록의 project_id는 NULL로 풀림)"""
+    ok = crud.delete_project(db, project_id=project_id, user_id=current_user.id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
+    return {"success": True}
+
+
+# ============================================
+# 컨텍스트 엔트리 엔드포인트
+# ============================================
+
+def _serialize_context_entry(entry) -> dict:
+    return {
+        "id": entry.id,
+        "term": entry.term,
+        "correction": entry.correction,
+        "note": entry.note,
+        "project_id": entry.project_id,
+        "source": entry.source,
+        "created_at": entry.created_at.isoformat() if entry.created_at else None,
+        "updated_at": entry.updated_at.isoformat() if entry.updated_at else None,
+    }
+
+
+@app.get("/contexts")
+async def list_contexts(
+    scope: str = Query("personal", description="personal | project | all"),
+    project_id: int = Query(None, description="scope=project일 때 필수"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """컨텍스트 글로서리 목록 (개인 또는 특정 프로젝트)"""
+    if scope not in ("personal", "project", "all"):
+        raise HTTPException(status_code=400, detail="scope는 personal | project | all 중 하나여야 합니다")
+    if scope == "project" and project_id is None:
+        raise HTTPException(status_code=400, detail="scope=project인 경우 project_id가 필요합니다")
+    entries = crud.list_context_entries(
+        db, current_user.id, scope=scope, project_id=project_id
+    )
+    return {
+        "success": True,
+        "count": len(entries),
+        "entries": [_serialize_context_entry(e) for e in entries],
+    }
+
+
+@app.post("/contexts")
+async def create_context(
+    body: ContextEntryCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """새 컨텍스트 엔트리 생성 (개인 또는 프로젝트)"""
+    if not body.term.strip() or not body.correction.strip():
+        raise HTTPException(status_code=400, detail="term과 correction은 비울 수 없습니다")
+    entry = crud.create_context_entry(
+        db,
+        user_id=current_user.id,
+        term=body.term,
+        correction=body.correction,
+        project_id=body.project_id,
+        note=body.note,
+    )
+    if entry is None:
+        raise HTTPException(status_code=404, detail="지정한 프로젝트를 찾을 수 없습니다")
+    return {"success": True, "entry": _serialize_context_entry(entry)}
+
+
+@app.put("/contexts/{entry_id}")
+async def update_context(
+    entry_id: int,
+    body: ContextEntryUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """컨텍스트 엔트리 수정 (수정 시 source는 manual로 승격)"""
+    entry = crud.update_context_entry(
+        db,
+        entry_id=entry_id,
+        user_id=current_user.id,
+        term=body.term,
+        correction=body.correction,
+        note=body.note,
+    )
+    if not entry:
+        raise HTTPException(status_code=404, detail="컨텍스트 엔트리를 찾을 수 없습니다")
+    return {"success": True, "entry": _serialize_context_entry(entry)}
+
+
+@app.delete("/contexts/{entry_id}")
+async def delete_context(
+    entry_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """컨텍스트 엔트리 삭제"""
+    ok = crud.delete_context_entry(db, entry_id=entry_id, user_id=current_user.id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="컨텍스트 엔트리를 찾을 수 없습니다")
+    return {"success": True}
 
 
 # ============================================

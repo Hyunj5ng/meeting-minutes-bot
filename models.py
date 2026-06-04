@@ -30,9 +30,106 @@ class User(Base):
     # 관계
     transcripts = relationship("TranscriptRecord", back_populates="user", cascade="all, delete-orphan")
     usage_records = relationship("UsageRecord", back_populates="user", cascade="all, delete-orphan")
+    projects = relationship("Project", back_populates="user", cascade="all, delete-orphan")
+    context_entries = relationship("ContextEntry", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User(id={self.id}, email='{self.email}')>"
+
+
+class Project(Base):
+    """프로젝트 (회의록을 묶어 관리하는 단위)"""
+    __tablename__ = "projects"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="소유자 ID",
+    )
+    name = Column(String(200), nullable=False, comment="프로젝트명")
+    description = Column(Text, nullable=True, comment="프로젝트 설명")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="생성 시각")
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        comment="수정 시각",
+    )
+
+    user = relationship("User", back_populates="projects")
+    transcripts = relationship("TranscriptRecord", back_populates="project")
+    context_entries = relationship(
+        "ContextEntry",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        Index("ix_projects_user_name", "user_id", "name"),
+    )
+
+    def __repr__(self):
+        return f"<Project(id={self.id}, name='{self.name}', user_id={self.user_id})>"
+
+
+# 컨텍스트 엔트리 source 상수
+CONTEXT_SOURCE_MANUAL = "manual"
+CONTEXT_SOURCE_AUTO = "auto"
+
+
+class ContextEntry(Base):
+    """컨텍스트 글로서리 (개인 또는 프로젝트별 인명/용어 교정)
+
+    project_id IS NULL → 개인 컨텍스트 (사용자 전역)
+    project_id IS NOT NULL → 해당 프로젝트 한정 컨텍스트
+    """
+    __tablename__ = "context_entries"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="소유자 ID",
+    )
+    project_id = Column(
+        Integer,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+        comment="프로젝트 ID (NULL이면 개인 컨텍스트)",
+    )
+    term = Column(String(200), nullable=False, comment="용어/표기 (찾는 단서)")
+    correction = Column(String(500), nullable=False, comment="올바른 표기 / 정의")
+    note = Column(Text, nullable=True, comment="부가 설명")
+    source = Column(
+        String(20),
+        nullable=False,
+        default=CONTEXT_SOURCE_MANUAL,
+        comment="manual | auto (자동 추출본인지)",
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="생성 시각")
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        comment="수정 시각",
+    )
+
+    user = relationship("User", back_populates="context_entries")
+    project = relationship("Project", back_populates="context_entries")
+
+    __table_args__ = (
+        Index("ix_context_entries_user_project", "user_id", "project_id"),
+    )
+
+    def __repr__(self):
+        scope = f"project_id={self.project_id}" if self.project_id else "personal"
+        return f"<ContextEntry({scope}, term='{self.term}' → '{self.correction}')>"
 
 
 class TranscriptRecord(Base):
@@ -56,7 +153,14 @@ class TranscriptRecord(Base):
     whisper_model = Column(String(50), nullable=False, default="base", comment="사용한 Whisper 모델")
 
     # 회의 맥락 정보
-    project_name = Column(String(500), nullable=True, comment="프로젝트명")
+    project_id = Column(
+        Integer,
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="소속 프로젝트 ID",
+    )
+    project_name = Column(String(500), nullable=True, comment="프로젝트명 (스냅샷, 백워드 호환)")
     meeting_title = Column(String(500), nullable=True, comment="회의 제목")
     attendees = Column(Text, nullable=True, comment="참석자 목록")
     keywords = Column(Text, nullable=True, comment="관련 키워드")
@@ -72,6 +176,7 @@ class TranscriptRecord(Base):
 
     # 관계
     user = relationship("User", back_populates="transcripts")
+    project = relationship("Project", back_populates="transcripts")
     summaries = relationship("SummaryRecord", back_populates="transcript", cascade="all, delete-orphan")
 
     def __repr__(self):

@@ -88,7 +88,7 @@ class GPTSummarizer:
             self.client = None
             print("경고: OPENROUTER_API_KEY가 설정되지 않았습니다.")
 
-    async def summarize(self, text, model="gpt-5-mini", context=None, past_context=None):
+    async def summarize(self, text, model="gpt-5-mini", context=None, past_context=None, glossary=None):
         """
         회의 내용을 LLM을 사용하여 정리된 회의록으로 변환합니다.
 
@@ -97,6 +97,8 @@ class GPTSummarizer:
             model: 사용할 모델 (프론트엔드 기준 이름)
             context: 회의 맥락 정보 dict (project_name, meeting_title, attendees, keywords)
             past_context: RAG로 검색된 과거 회의록 요약 리스트
+            glossary: 컨텍스트 글로서리 리스트 [{term, correction, note}]
+                      개인+프로젝트 컨텍스트 통합본. STT 오타/표기 교정에 사용.
 
         Returns:
             dict: {"summary": str, "input_tokens": int, "output_tokens": int}
@@ -108,7 +110,7 @@ class GPTSummarizer:
         router_model = MODEL_MAP.get(model, model)
         print(f"OpenRouter ({router_model})을 사용하여 회의록 작성 중...")
 
-        prompt = self._get_prompt(text, context, past_context)
+        prompt = self._get_prompt(text, context, past_context, glossary)
 
         response = await self.client.chat.completions.create(
             model=router_model,
@@ -132,7 +134,7 @@ class GPTSummarizer:
             "output_tokens": output_tokens
         }
 
-    def _get_prompt(self, text, context=None, past_context=None):
+    def _get_prompt(self, text, context=None, past_context=None, glossary=None):
         """공통 프롬프트 생성"""
         # 맥락 정보가 있으면 프롬프트 상단에 삽입
         context_section = ""
@@ -149,6 +151,29 @@ class GPTSummarizer:
             if lines:
                 context_section = "회의 정보:\n" + "\n".join(lines) + "\n\n위 맥락을 참고하여 회의록을 작성해주세요.\n\n"
 
+        # 글로서리 (개인 + 프로젝트 컨텍스트) — STT 표기 교정용
+        glossary_section = ""
+        if glossary:
+            glossary_lines = []
+            for item in glossary:
+                term = (item.get("term") or "").strip()
+                correction = (item.get("correction") or "").strip()
+                note = (item.get("note") or "").strip()
+                if not term or not correction:
+                    continue
+                line = f'- "{term}" → "{correction}"'
+                if note:
+                    line += f" ({note})"
+                glossary_lines.append(line)
+            if glossary_lines:
+                glossary_section = (
+                    "알려진 표기/용어 (반드시 적용):\n"
+                    "STT가 음성을 텍스트로 변환할 때 인명/고유명사를 잘못 표기하는 경우가 많습니다. "
+                    "아래 목록의 잘못된 표기가 본문에 등장하면 올바른 표기로 자동 치환해서 회의록을 작성하세요.\n"
+                    + "\n".join(glossary_lines)
+                    + "\n\n"
+                )
+
         # RAG: 과거 회의록 맥락 삽입
         past_context_section = ""
         if past_context:
@@ -161,7 +186,7 @@ class GPTSummarizer:
                 + "\n\n위 과거 회의 내용을 참고하여, 연속성 있는 맥락으로 이번 회의록을 작성해주세요.\n\n"
             )
 
-        return f"""{context_section}{past_context_section}아래는 회의 중 녹음된 음성을 텍스트로 변환한 내용입니다. 시스템 프롬프트의 출력 형식에 맞춰 회의록을 작성해주세요.
+        return f"""{context_section}{glossary_section}{past_context_section}아래는 회의 중 녹음된 음성을 텍스트로 변환한 내용입니다. 시스템 프롬프트의 출력 형식에 맞춰 회의록을 작성해주세요.
 
 **중요 지침:**
 - 원본 텍스트에 포함된 세부 논의 내용, 구체적인 사례, 수치, 의견 등을 빠뜨리지 마세요.

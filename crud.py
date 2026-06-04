@@ -10,8 +10,12 @@ from models import (
     SummaryVersion,
     User,
     UsageRecord,
+    Project,
+    ContextEntry,
     VERSION_SOURCE_AI_INITIAL,
     VERSION_SOURCE_USER_EDIT,
+    CONTEXT_SOURCE_MANUAL,
+    CONTEXT_SOURCE_AUTO,
 )
 from typing import List, Optional
 
@@ -152,6 +156,7 @@ def create_transcript_record(
     audio_duration: Optional[float] = None,
     stt_processing_time: Optional[float] = None,
     stt_cost: Optional[float] = None,
+    project_id: Optional[int] = None,
     project_name: Optional[str] = None,
     meeting_title: Optional[str] = None,
     attendees: Optional[str] = None,
@@ -167,6 +172,7 @@ def create_transcript_record(
         whisper_model=whisper_model,
         stt_processing_time=stt_processing_time,
         stt_cost=stt_cost,
+        project_id=project_id,
         project_name=project_name or None,
         meeting_title=meeting_title or None,
         attendees=attendees or None,
@@ -383,6 +389,260 @@ def get_summary_version(
         SummaryVersion.version_no == version_no,
         TranscriptRecord.user_id == user_id,
     ).first()
+
+
+# ========== Project CRUD ==========
+
+def create_project(
+    db: Session,
+    user_id: int,
+    name: str,
+    description: Optional[str] = None,
+) -> Project:
+    """새 프로젝트 생성"""
+    project = Project(user_id=user_id, name=name, description=description or None)
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+def get_project(db: Session, project_id: int, user_id: int) -> Optional[Project]:
+    """프로젝트 단건 조회 (소유권 확인)"""
+    return db.query(Project).filter(
+        Project.id == project_id,
+        Project.user_id == user_id,
+    ).first()
+
+
+def get_or_create_project_by_name(
+    db: Session,
+    user_id: int,
+    name: str,
+) -> Optional[Project]:
+    """이름으로 프로젝트 조회, 없으면 생성. 빈 문자열이면 None 반환."""
+    if not name or not name.strip():
+        return None
+    name = name.strip()
+    project = db.query(Project).filter(
+        Project.user_id == user_id,
+        Project.name == name,
+    ).first()
+    if project:
+        return project
+    return create_project(db, user_id=user_id, name=name)
+
+
+def get_all_projects(db: Session, user_id: int) -> List[Project]:
+    """사용자의 모든 프로젝트 (최근 수정순)"""
+    return db.query(Project).filter(
+        Project.user_id == user_id,
+    ).order_by(Project.updated_at.desc()).all()
+
+
+def update_project(
+    db: Session,
+    project_id: int,
+    user_id: int,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+) -> Optional[Project]:
+    """프로젝트 수정 (소유권 확인)"""
+    project = get_project(db, project_id, user_id)
+    if not project:
+        return None
+    if name is not None and name.strip():
+        project.name = name.strip()
+    if description is not None:
+        project.description = description or None
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+def delete_project(db: Session, project_id: int, user_id: int) -> bool:
+    """프로젝트 삭제 (소유권 확인). transcript의 project_id는 SET NULL로 정리됨."""
+    project = get_project(db, project_id, user_id)
+    if not project:
+        return False
+    db.delete(project)
+    db.commit()
+    return True
+
+
+def get_project_summary_counts(db: Session, user_id: int) -> dict:
+    """프로젝트별 회의록 수 집계 (id → count)"""
+    rows = db.query(
+        TranscriptRecord.project_id,
+        sa_func.count(SummaryRecord.id),
+    ).join(
+        SummaryRecord, SummaryRecord.transcript_id == TranscriptRecord.id
+    ).filter(
+        TranscriptRecord.user_id == user_id,
+        TranscriptRecord.project_id.isnot(None),
+    ).group_by(TranscriptRecord.project_id).all()
+    return {pid: cnt for pid, cnt in rows}
+
+
+# ========== ContextEntry CRUD ==========
+
+def create_context_entry(
+    db: Session,
+    user_id: int,
+    term: str,
+    correction: str,
+    project_id: Optional[int] = None,
+    note: Optional[str] = None,
+    source: str = CONTEXT_SOURCE_MANUAL,
+) -> Optional[ContextEntry]:
+    """컨텍스트 엔트리 생성.
+    project_id가 지정된 경우 해당 프로젝트가 user 소유인지 확인."""
+    if project_id is not None:
+        project = get_project(db, project_id, user_id)
+        if not project:
+            return None
+
+    entry = ContextEntry(
+        user_id=user_id,
+        project_id=project_id,
+        term=term.strip(),
+        correction=correction.strip(),
+        note=(note or "").strip() or None,
+        source=source,
+    )
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+    return entry
+
+
+def get_context_entry(db: Session, entry_id: int, user_id: int) -> Optional[ContextEntry]:
+    """컨텍스트 엔트리 단건 조회 (소유권 확인)"""
+    return db.query(ContextEntry).filter(
+        ContextEntry.id == entry_id,
+        ContextEntry.user_id == user_id,
+    ).first()
+
+
+def list_context_entries(
+    db: Session,
+    user_id: int,
+    scope: str = "personal",
+    project_id: Optional[int] = None,
+) -> List[ContextEntry]:
+    """컨텍스트 엔트리 목록.
+    scope='personal' → project_id IS NULL
+    scope='project' → project_id == 지정값 (소유권 검증 후)
+    scope='all' → user의 모든 엔트리
+    """
+    q = db.query(ContextEntry).filter(ContextEntry.user_id == user_id)
+    if scope == "personal":
+        q = q.filter(ContextEntry.project_id.is_(None))
+    elif scope == "project":
+        if project_id is None:
+            return []
+        # 소유권 검증
+        if not get_project(db, project_id, user_id):
+            return []
+        q = q.filter(ContextEntry.project_id == project_id)
+    # 'all'은 추가 필터 없음
+    return q.order_by(ContextEntry.updated_at.desc()).all()
+
+
+def update_context_entry(
+    db: Session,
+    entry_id: int,
+    user_id: int,
+    term: Optional[str] = None,
+    correction: Optional[str] = None,
+    note: Optional[str] = None,
+) -> Optional[ContextEntry]:
+    """컨텍스트 엔트리 수정 (소유권 확인). 수정 시 source는 manual로 승격."""
+    entry = get_context_entry(db, entry_id, user_id)
+    if not entry:
+        return None
+    if term is not None and term.strip():
+        entry.term = term.strip()
+    if correction is not None and correction.strip():
+        entry.correction = correction.strip()
+    if note is not None:
+        entry.note = (note or "").strip() or None
+    # 사용자가 직접 수정한 엔트리는 manual로 승격 (auto 분류 → 사용자 검증됨)
+    entry.source = CONTEXT_SOURCE_MANUAL
+    db.commit()
+    db.refresh(entry)
+    return entry
+
+
+def delete_context_entry(db: Session, entry_id: int, user_id: int) -> bool:
+    """컨텍스트 엔트리 삭제 (소유권 확인)"""
+    entry = get_context_entry(db, entry_id, user_id)
+    if not entry:
+        return False
+    db.delete(entry)
+    db.commit()
+    return True
+
+
+def find_context_entry_by_term(
+    db: Session,
+    user_id: int,
+    project_id: Optional[int],
+    term: str,
+) -> Optional[ContextEntry]:
+    """동일 term의 엔트리 조회 (자동 추출 시 중복 방지용).
+    project_id IS NULL과 NOT NULL을 명시적으로 구분한다."""
+    q = db.query(ContextEntry).filter(
+        ContextEntry.user_id == user_id,
+        ContextEntry.term == term,
+    )
+    if project_id is None:
+        q = q.filter(ContextEntry.project_id.is_(None))
+    else:
+        q = q.filter(ContextEntry.project_id == project_id)
+    return q.first()
+
+
+def upsert_auto_context_entry(
+    db: Session,
+    user_id: int,
+    project_id: Optional[int],
+    term: str,
+    correction: str,
+    note: Optional[str] = None,
+) -> Optional[ContextEntry]:
+    """자동 추출용 업서트.
+    - 동일 term이 있으면: 사용자가 수정한 manual 엔트리는 건드리지 않음 (덮어쓰지 않음).
+      auto 엔트리이고 correction이 다르면 갱신.
+    - 없으면: source='auto'로 신규 생성."""
+    term = (term or "").strip()
+    correction = (correction or "").strip()
+    if not term or not correction:
+        return None
+
+    existing = find_context_entry_by_term(db, user_id, project_id, term)
+    if existing:
+        if existing.source == CONTEXT_SOURCE_MANUAL:
+            # 사용자 검증된 항목은 덮어쓰지 않음
+            return existing
+        # auto 엔트리 — 정보가 변경됐다면 갱신
+        if existing.correction != correction or (note and existing.note != note):
+            existing.correction = correction
+            if note:
+                existing.note = note.strip() or None
+            db.commit()
+            db.refresh(existing)
+        return existing
+
+    return create_context_entry(
+        db,
+        user_id=user_id,
+        term=term,
+        correction=correction,
+        project_id=project_id,
+        note=note,
+        source=CONTEXT_SOURCE_AUTO,
+    )
 
 
 def search_summary_records(

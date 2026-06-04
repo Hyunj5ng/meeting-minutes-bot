@@ -47,6 +47,8 @@
             <nav class="view-nav" id="viewNav" style="display: none;">
                 <button class="view-nav-btn active" data-view="create" id="navCreate">새 회의록 만들기</button>
                 <button class="view-nav-btn" data-view="dashboard" id="navDashboard">내 회의록</button>
+                <button class="view-nav-btn" data-view="projects" id="navProjects">프로젝트</button>
+                <button class="view-nav-btn" data-view="personalContext" id="navPersonalContext">내 컨텍스트</button>
             </nav>
         </header>
 
@@ -98,8 +100,12 @@
                             <h4>회의 정보</h4>
                             <div class="options-grid">
                                 <div class="option-group">
-                                    <label for="projectName">프로젝트명</label>
-                                    <input type="text" id="projectName" class="text-input" placeholder="예: 3P PDP Builder">
+                                    <label for="projectSelect">프로젝트</label>
+                                    <select id="projectSelect" class="select-input">
+                                        <option value="">— 프로젝트 없음 —</option>
+                                        <option value="__new__">+ 새 프로젝트 만들기...</option>
+                                    </select>
+                                    <input type="text" id="projectName" class="text-input" placeholder="새 프로젝트 이름" style="display: none; margin-top: 0.4rem;">
                                 </div>
                                 <div class="option-group">
                                     <label for="meetingTitle">회의 제목</label>
@@ -333,6 +339,105 @@
                     <div class="dashboard-list" id="dashboardList"></div>
                 </div>
             </section>
+
+            <!-- 프로젝트 목록 뷰 -->
+            <section class="dashboard-view" id="projectsView" style="display: none;">
+                <div class="workflow-card dashboard-card">
+                    <div class="dashboard-header">
+                        <h3>프로젝트</h3>
+                        <button class="btn-primary btn-compact" id="newProjectBtn" type="button">+ 새 프로젝트</button>
+                    </div>
+                    <div class="dashboard-status" id="projectsStatus">불러오는 중...</div>
+                    <div class="dashboard-list" id="projectsList"></div>
+                </div>
+            </section>
+
+            <!-- 프로젝트 상세 뷰 -->
+            <section class="dashboard-view" id="projectDetailView" style="display: none;">
+                <div class="workflow-card dashboard-card">
+                    <div class="dashboard-header">
+                        <div>
+                            <button class="btn-link" id="backToProjectsBtn" type="button">← 프로젝트 목록</button>
+                            <h3 id="projectDetailName" style="margin-top: 0.25rem;">프로젝트</h3>
+                            <p id="projectDetailDescription" class="project-description"></p>
+                        </div>
+                        <div class="project-actions">
+                            <button class="btn-secondary btn-compact" id="editProjectBtn" type="button">정보 수정</button>
+                            <button class="btn-danger btn-compact" id="deleteProjectBtn" type="button">프로젝트 삭제</button>
+                        </div>
+                    </div>
+
+                    <div class="tabs">
+                        <button class="tab active" data-project-tab="meetings">회의록</button>
+                        <button class="tab" data-project-tab="context">프로젝트 컨텍스트</button>
+                    </div>
+
+                    <div class="tab-content active" id="projectMeetingsTab">
+                        <div class="dashboard-status" id="projectMeetingsStatus"></div>
+                        <div class="dashboard-list" id="projectMeetingsList"></div>
+                    </div>
+
+                    <div class="tab-content" id="projectContextTab">
+                        <div class="context-explain">
+                            <strong>프로젝트 컨텍스트</strong>는 이 프로젝트의 회의록을 만들 때만 적용되는 용어/약어 모음입니다.
+                            예) <code>"Y H" → "Yield Hub"</code>, <code>"PDP" → "Product Detail Page"</code>
+                        </div>
+                        <div class="context-editor" data-scope="project">
+                            <div class="context-list" id="projectContextList"></div>
+                            <div class="context-add">
+                                <input type="text" class="text-input" data-field="term" placeholder="잘못된/원래 표기">
+                                <input type="text" class="text-input" data-field="correction" placeholder="올바른 표기 / 정의">
+                                <input type="text" class="text-input" data-field="note" placeholder="설명 (선택)">
+                                <button class="btn-primary btn-compact" data-action="add">추가</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 내 컨텍스트 뷰 (개인 글로서리) -->
+            <section class="dashboard-view" id="personalContextView" style="display: none;">
+                <div class="workflow-card dashboard-card">
+                    <div class="dashboard-header">
+                        <h3>내 컨텍스트</h3>
+                    </div>
+                    <div class="context-explain">
+                        <strong>내 컨텍스트</strong>는 모든 회의록 생성에 자동으로 적용되는 개인 용어/표기 모음입니다.
+                        주로 자주 마주치는 인명/팀명 등이 들어갑니다. 회의록을 수정하면 AI가 백그라운드에서 자동으로 학습해 항목을 추가합니다.
+                    </div>
+                    <div class="context-editor" data-scope="personal">
+                        <div class="dashboard-status" id="personalContextStatus">불러오는 중...</div>
+                        <div class="context-list" id="personalContextList"></div>
+                        <div class="context-add">
+                            <input type="text" class="text-input" data-field="term" placeholder="잘못된/원래 표기">
+                            <input type="text" class="text-input" data-field="correction" placeholder="올바른 표기 / 정의">
+                            <input type="text" class="text-input" data-field="note" placeholder="설명 (선택)">
+                            <button class="btn-primary btn-compact" data-action="add">추가</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 프로젝트 생성/편집 모달 -->
+            <div class="modal-overlay" id="projectModal" style="display: none;">
+                <div class="modal">
+                    <h3 id="projectModalTitle">새 프로젝트</h3>
+                    <div class="modal-body">
+                        <div class="option-group">
+                            <label for="projectModalName">프로젝트명 *</label>
+                            <input type="text" id="projectModalName" class="text-input" placeholder="예: 3P PDP Builder">
+                        </div>
+                        <div class="option-group">
+                            <label for="projectModalDescription">설명</label>
+                            <textarea id="projectModalDescription" class="text-input" rows="3" placeholder="이 프로젝트의 맥락을 짧게 적어주세요"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn-secondary" id="projectModalCancel" type="button">취소</button>
+                        <button class="btn-primary" id="projectModalSave" type="button">저장</button>
+                    </div>
+                </div>
+            </div>
         </main>
 
         <!-- 푸터 -->
