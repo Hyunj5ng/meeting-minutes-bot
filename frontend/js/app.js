@@ -127,27 +127,6 @@ function formatElapsed(seconds) {
 }
 
 // ============================================
-// 스테퍼 헬퍼
-// ============================================
-
-function setStepState(stepNum, state) {
-    const step = document.getElementById(`step${stepNum}`);
-    if (step) step.setAttribute('data-state', state);
-}
-
-function updateStepUI(stepNum, percent, statusText, etaText) {
-    const bar = document.getElementById(`step${stepNum}ProgressBar`);
-    const pct = document.getElementById(`step${stepNum}Progress`);
-    const status = document.getElementById(`step${stepNum}Status`);
-    const eta = document.getElementById(`step${stepNum}Eta`);
-
-    if (bar) bar.style.width = percent + '%';
-    if (pct) pct.textContent = Math.round(percent) + '%';
-    if (status) status.textContent = statusText;
-    if (eta) eta.textContent = etaText || '';
-}
-
-// ============================================
 // Accordion (업로드 카드 접기/펼치기)
 // ============================================
 
@@ -522,8 +501,6 @@ async function openSummaryFromDashboard(summaryId) {
         // 생성 뷰로 이동 (상단 업로드 카드는 접고 결과만 노출)
         switchView('create');
         collapseUploadCard();
-        const stepperCard = document.getElementById('stepperCard');
-        if (stepperCard) stepperCard.style.display = 'none';
 
         resultData = {
             summary: record.summary,
@@ -1572,245 +1549,413 @@ function clearFile() {
 // 메인 워크플로우: 업로드 → STT → 요약
 // ============================================
 
+// ============================================
+// 다중 작업 매니저 (최대 3개 동시 처리)
+// ============================================
+
+const MAX_CONCURRENT_JOBS = 3;
+const jobsById = new Map();         // jobId -> job
+let nextJobId = 1;
+
+function genJobId() {
+    return `job-${nextJobId++}`;
+}
+
+function getActiveJobs() {
+    return [...jobsById.values()].filter(j =>
+        ['queued', 'uploading', 'stt', 'summarizing'].includes(j.status)
+    );
+}
+
+function getActiveJobCount() {
+    return getActiveJobs().length;
+}
+
 async function handleConvert() {
     if (!selectedFile) return;
 
-    // 스테퍼 표시 + 업로드 카드 접기
-    const stepperCard = document.getElementById('stepperCard');
-    stepperCard.style.display = 'block';
-    collapseUploadCard();
-    resultSection.style.display = 'none';
+    // 클라이언트 측 동시성 캡 (서버에서도 강제됨)
+    if (getActiveJobCount() >= MAX_CONCURRENT_JOBS) {
+        alert(`동시 처리 가능한 회의록은 최대 ${MAX_CONCURRENT_JOBS}개입니다. 진행 중인 작업이 끝난 뒤 다시 시도해주세요.`);
+        return;
+    }
 
-    // 스텝 초기화
-    setStepState(1, 'active');
-    setStepState(2, 'pending');
-    setStepState(3, 'pending');
-    updateStepUI(1, 0, '업로드 준비 중...', '');
-    updateStepUI(2, 0, '대기 중...', '');
-    updateStepUI(3, 0, '대기 중...', '');
-
-    // FormData 생성
-    const formData = new FormData();
-    formData.append('file', selectedFile);
-    formData.append('whisper_model', 'base');
-    formData.append('audio_duration', audioDuration || 0);
-    formData.append('file_size', selectedFile.size);
-
-    // 프로젝트 처리: 기존 프로젝트 선택 시 project_id, 신규 입력 시 project_name
+    // 현재 폼 상태를 작업에 캡처 (이후 폼은 초기화되어도 작업은 자체 컨텍스트로 진행)
     const projectSelectEl = document.getElementById('projectSelect');
     const projectNameInput = document.getElementById('projectName');
     const selectedProjectVal = projectSelectEl ? projectSelectEl.value : '';
-    if (selectedProjectVal && selectedProjectVal !== '__new__') {
-        formData.append('project_id', selectedProjectVal);
-    } else if (selectedProjectVal === '__new__' && projectNameInput) {
-        formData.append('project_name', projectNameInput.value.trim());
-    } else {
-        formData.append('project_name', '');
-    }
+    const gptSelect = document.getElementById('gptModelUpload');
 
-    formData.append('meeting_title', document.getElementById('meetingTitle').value);
-    formData.append('attendees', document.getElementById('attendees').value);
+    const job = {
+        id: genJobId(),
+        file: selectedFile,
+        audioDuration: audioDuration || 0,
+        status: 'queued',
+        progress: 0,
+        stage: null,            // upload | stt | summarize
+        transcriptId: null,
+        transcript: null,
+        summary: null,
+        summaryId: null,
+        timestamp: null,
+        options: {
+            projectId: (selectedProjectVal && selectedProjectVal !== '__new__') ? selectedProjectVal : null,
+            projectName: (selectedProjectVal === '__new__' && projectNameInput) ? projectNameInput.value.trim() : '',
+            meetingTitle: document.getElementById('meetingTitle').value,
+            attendees: document.getElementById('attendees').value,
+            gptModel: gptSelect.value,
+            gptModelName: gptSelect.options[gptSelect.selectedIndex].text.split(' - ')[0],
+            autoEmail: document.getElementById('autoEmailCheckbox')?.checked || false,
+        },
+        xhr: null,
+        sttProgress: null,
+        summaryProgress: null,
+        error: null,
+        cardEl: null,
+    };
+    jobsById.set(job.id, job);
 
+    // 큐 카드 표시 + 카드 추가 (업로드 카드는 펼친 채 유지하여 다음 파일 즉시 수령 가능)
+    const queueCard = document.getElementById('jobQueueCard');
+    if (queueCard) queueCard.style.display = 'block';
+    renderJobCard(job);
+    refreshJobQueueCount();
+
+    // 폼에서 파일만 초기화 (다른 입력은 유지 — 동일 프로젝트 연속 업로드 편의)
+    selectedFile = null;
+    audioDuration = 0;
+    if (fileInput) fileInput.value = '';
+    if (uploadArea) uploadArea.style.display = 'block';
+    if (fileInfo) fileInfo.style.display = 'none';
+    if (convertBtn) convertBtn.disabled = true;
+
+    // 작업 시작 (비차단)
+    startJob(job).catch(err => {
+        console.error(`Job ${job.id} 실패:`, err);
+    });
+}
+
+async function startJob(job) {
     try {
-        // === Step 1: XHR 업로드 + STT ===
-        const sttResult = await doUploadAndSTT(formData);
+        await jobUploadAndSTT(job);
+        if (job.status === 'canceled') return;
+        await jobSummarize(job);
+        if (job.status === 'canceled') return;
 
-        transcriptData = {
-            ...sttResult,
-            transcriptId: sttResult.transcript_id,
-            fileSize: selectedFile.size,
-            audioDuration: audioDuration
-        };
-
-        // === Step 3: 요약 ===
-        await doSummarize();
-
-        // 사용량 갱신
+        job.status = 'done';
+        job.progress = 100;
+        updateJobCard(job, { status: '회의록 생성 완료!', pct: 100, state: 'done', stage: 'summarize', stageDone: true });
         fetchUsageInfo();
 
+        // 자동 이메일 발송 (옵션 켜진 경우)
+        if (job.options.autoEmail && job.summaryId) {
+            try {
+                const emailRes = await authFetch(`${API_BASE_URL}/summaries/${job.summaryId}/send-email`, { method: 'POST' });
+                if (emailRes.ok) {
+                    const emailData = await emailRes.json();
+                    showJobToast(job, emailData.message);
+                } else {
+                    const emailError = await emailRes.json();
+                    showJobToast(job, '이메일 발송 실패: ' + (emailError.detail || '알 수 없는 오류'));
+                }
+            } catch (emailErr) {
+                console.error('Auto email error:', emailErr);
+            }
+        }
     } catch (error) {
-        console.error('Error:', error);
-        alert('오류가 발생했습니다: ' + error.message);
-        reset();
+        if (job.status === 'canceled') return;
+        job.status = 'failed';
+        job.error = error.message || '알 수 없는 오류';
+        updateJobCard(job, { status: '실패', state: 'failed', error: job.error });
+    } finally {
+        refreshJobQueueCount();
     }
 }
 
-// Step 1 + 2: XHR 업로드 (실제 진행률) + STT (추정 진행률)
-function doUploadAndSTT(formData) {
+function jobUploadAndSTT(job) {
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
+        job.xhr = xhr;
+        job.status = 'uploading';
+        job.stage = 'upload';
+        updateJobCard(job, { status: '업로드 시작...', pct: 0, state: 'running', stage: 'upload' });
 
-        // Step 1: 실제 업로드 진행률
         xhr.upload.addEventListener('progress', (e) => {
-            if (e.lengthComputable) {
-                const percent = (e.loaded / e.total) * 100;
-                updateStepUI(1, percent, '파일 업로드 중...', '');
-            }
+            if (!e.lengthComputable) return;
+            const pct = (e.loaded / e.total) * 50; // 업로드는 전체의 0~50%
+            updateJobCard(job, { status: '파일 업로드 중...', pct, state: 'running', stage: 'upload' });
         });
 
         xhr.upload.addEventListener('load', () => {
-            // 업로드 완료 → Step 1 완료
-            setStepState(1, 'completed');
-            updateStepUI(1, 100, '업로드 완료!', '');
+            job.status = 'stt';
+            job.stage = 'stt';
+            updateJobCard(job, { status: '음성→텍스트 변환 중...', pct: 50, state: 'running', stage: 'stt', stageDone: 'upload' });
 
-            // Step 2: STT 시작
-            setStepState(2, 'active');
-            const estimatedSttMs = audioDuration > 0
-                ? audioDuration * ESTIMATION.stt_ratio * 1000
-                : (selectedFile.size / (1024 * 1024)) * 4000; // fallback: 1MB당 4초
-
-            // 최소 3초로 설정 (너무 빠르면 프로그레스가 의미없음)
-            const sttProgress = new RealisticProgress(Math.max(estimatedSttMs, 3000), (pct, remaining) => {
-                updateStepUI(2, pct, '음성을 텍스트로 변환 중...', formatEta(remaining));
+            // STT 진행률을 50%→90% 사이에서 추정
+            const estMs = job.audioDuration > 0
+                ? job.audioDuration * ESTIMATION.stt_ratio * 1000
+                : (job.file.size / (1024 * 1024)) * 4000;
+            const sttProgress = new RealisticProgress(Math.max(estMs, 3000), (pct) => {
+                const mapped = 50 + (pct / 100) * 40; // 50~90%
+                updateJobCard(job, { status: '음성→텍스트 변환 중...', pct: mapped, state: 'running', stage: 'stt' });
             });
             sttProgress.start();
-
-            // sttProgress를 xhr에 저장해서 응답 시 complete 호출
-            xhr._sttProgress = sttProgress;
-            xhr._sttStartTime = Date.now();
+            job.sttProgress = sttProgress;
         });
 
         xhr.addEventListener('load', () => {
-            if (xhr._sttProgress) xhr._sttProgress.complete();
-
+            if (job.sttProgress) job.sttProgress.complete();
             if (xhr.status >= 200 && xhr.status < 300) {
                 const data = JSON.parse(xhr.responseText);
-
-                const elapsed = xhr._sttStartTime ? Math.round((Date.now() - xhr._sttStartTime) / 1000) : 0;
-                setStepState(2, 'completed');
-                updateStepUI(2, 100, `변환 완료! (${formatElapsed(elapsed)})`, '');
-
-                resolve(data);
+                job.transcriptId = data.transcript_id;
+                job.transcript = data.transcript;
+                job.timestamp = data.timestamp;
+                resolve();
             } else {
                 let errorMsg = '처리 중 오류가 발생했습니다';
                 try {
                     const errorData = JSON.parse(xhr.responseText);
                     errorMsg = errorData.detail || errorMsg;
                 } catch {}
+                // 서버 측 동시성 캡 초과
+                if (xhr.status === 429) {
+                    errorMsg = errorMsg || '동시 처리 한도 초과';
+                }
                 reject(new Error(errorMsg));
             }
         });
 
         xhr.addEventListener('error', () => {
-            if (xhr._sttProgress) xhr._sttProgress.stop();
+            if (job.sttProgress) job.sttProgress.stop();
             reject(new Error('네트워크 오류가 발생했습니다'));
         });
 
-        xhr.open('POST', `${API_BASE_URL}/transcribe-only`);
-        if (accessToken) {
-            xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
+        xhr.addEventListener('abort', () => {
+            if (job.sttProgress) job.sttProgress.stop();
+            reject(new Error('취소됨'));
+        });
+
+        // FormData 빌드
+        const formData = new FormData();
+        formData.append('file', job.file);
+        formData.append('whisper_model', 'base');
+        formData.append('audio_duration', job.audioDuration);
+        formData.append('file_size', job.file.size);
+        if (job.options.projectId) {
+            formData.append('project_id', job.options.projectId);
+        } else if (job.options.projectName) {
+            formData.append('project_name', job.options.projectName);
+        } else {
+            formData.append('project_name', '');
         }
+        formData.append('meeting_title', job.options.meetingTitle);
+        formData.append('attendees', job.options.attendees);
+
+        xhr.open('POST', `${API_BASE_URL}/transcribe-only`);
+        if (accessToken) xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
         xhr.send(formData);
     });
 }
 
-// Step 3: 요약
-async function doSummarize() {
-    if (!transcriptData) return;
+async function jobSummarize(job) {
+    job.status = 'summarizing';
+    job.stage = 'summarize';
 
-    setStepState(3, 'active');
-    const gptModel = document.getElementById('gptModelUpload').value;
-    const modelSelect = document.getElementById('gptModelUpload');
-    const modelName = modelSelect.options[modelSelect.selectedIndex].text.split(' - ')[0];
-
-    // 추정 시간 계산: base + rate * tokens/1000
-    const transcriptLength = (transcriptData.transcript || '').length;
-    // 한국어는 글자수/1500 ≈ 1k 토큰 (대략)
+    const transcriptLength = (job.transcript || '').length;
     const estimatedTokensK = transcriptLength / 1500;
-    const coeff = ESTIMATION.summary[gptModel] || ESTIMATION.summary_default;
-    const estimatedMs = (coeff.base + coeff.rate * estimatedTokensK) * 1000 * 1.3; // +30% 여유
+    const coeff = ESTIMATION.summary[job.options.gptModel] || ESTIMATION.summary_default;
+    const estimatedMs = (coeff.base + coeff.rate * estimatedTokensK) * 1000 * 1.3;
 
-    const summaryProgress = new RealisticProgress(estimatedMs, (pct, remaining) => {
-        updateStepUI(3, pct, `${modelName}로 회의록 생성 중...`, formatEta(remaining));
+    const summaryProgress = new RealisticProgress(estimatedMs, (pct) => {
+        const mapped = 90 + (pct / 100) * 10; // 90~100%
+        updateJobCard(job, {
+            status: `${job.options.gptModelName}로 회의록 생성 중...`,
+            pct: mapped,
+            state: 'running',
+            stage: 'summarize',
+            stageDone: 'stt',
+        });
     });
     summaryProgress.start();
+    job.summaryProgress = summaryProgress;
 
     try {
         const formData = new FormData();
-        formData.append('transcript_id', transcriptData.transcriptId);
-        formData.append('gpt_model', gptModel);
+        formData.append('transcript_id', job.transcriptId);
+        formData.append('gpt_model', job.options.gptModel);
         formData.append('save_files', 'true');
         formData.append('return_file', 'false');
 
-        const startTime = Date.now();
-        const response = await authFetch(`${API_BASE_URL}/summarize`, {
-            method: 'POST',
-            body: formData
-        });
-
+        const response = await authFetch(`${API_BASE_URL}/summarize`, { method: 'POST', body: formData });
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || '처리 중 오류가 발생했습니다');
         }
-
         const data = await response.json();
 
         summaryProgress.complete();
-        const elapsed = Math.round((Date.now() - startTime) / 1000);
-        setStepState(3, 'completed');
-        updateStepUI(3, 100, `회의록 생성 완료! (${formatElapsed(elapsed)})`, '');
-
-        resultData = {
-            ...transcriptData,
-            summary: data.summary,
-            summaryId: data.summary_id,
-            gptModel: gptModel
-        };
+        job.summary = data.summary;
+        job.summaryId = data.summary_id;
 
         summaryHistory.push({
             summaryId: data.summary_id,
             transcriptId: data.transcript_id,
-            gptModel: gptModel,
+            gptModel: job.options.gptModel,
             summary: data.summary,
             timestamp: data.timestamp,
             createdAt: new Date().toISOString()
         });
-
-        // 버전 상태 초기화 (방금 만들어진 v1=ai_initial)
-        currentSummaryId = data.summary_id;
-        currentVersions = [{
-            version_no: 1,
-            source: 'ai_initial',
-            content: data.summary,
-            created_at: new Date().toISOString(),
-        }];
-        currentVersionNo = 1;
-        isViewingLatest = true;
-        isDiffOpen = false;
-
-        // 결과 표시
-        await new Promise(resolve => setTimeout(resolve, 500));
-        const titleEl = document.getElementById('resultTitle');
-        if (titleEl) titleEl.textContent = '회의록 생성 완료!';
-        showResult(resultData);
-        renderVersionBar();
-
-        // 이메일 자동 발송
-        const autoEmail = document.getElementById('autoEmailCheckbox');
-        if (autoEmail && autoEmail.checked && resultData.summaryId) {
-            try {
-                const emailRes = await authFetch(`${API_BASE_URL}/summaries/${resultData.summaryId}/send-email`, {
-                    method: 'POST',
-                });
-                if (emailRes.ok) {
-                    const emailData = await emailRes.json();
-                    alert(emailData.message);
-                } else {
-                    const emailError = await emailRes.json();
-                    alert('이메일 발송 실패: ' + (emailError.detail || '알 수 없는 오류'));
-                }
-            } catch (emailErr) {
-                console.error('Auto email error:', emailErr);
-                alert('이메일 자동 발송 중 오류: ' + emailErr.message);
-            }
-        }
-
     } catch (error) {
         summaryProgress.stop();
-        setStepState(3, 'error');
-        updateStepUI(3, 0, '오류 발생: ' + error.message, '');
         throw error;
     }
+}
+
+// 작업 카드 UI 렌더링
+function renderJobCard(job) {
+    const list = document.getElementById('jobQueueList');
+    const tpl = document.getElementById('jobCardTemplate');
+    if (!list || !tpl) return;
+
+    const node = tpl.content.firstElementChild.cloneNode(true);
+    node.dataset.jobId = job.id;
+    node.querySelector('.job-card-filename').textContent = job.file.name;
+
+    node.querySelector('[data-action="cancel"]').addEventListener('click', () => cancelJob(job));
+    node.querySelector('[data-action="view"]').addEventListener('click', () => viewJobResult(job));
+
+    list.appendChild(node);
+    job.cardEl = node;
+}
+
+function updateJobCard(job, { status, pct, state, stage, stageDone, error }) {
+    if (!job.cardEl) return;
+    const card = job.cardEl;
+
+    if (status !== undefined) card.querySelector('.job-card-status').textContent = status;
+    if (pct !== undefined) {
+        const fill = card.querySelector('.job-card-progress-fill');
+        const pctEl = card.querySelector('.job-card-progress-pct');
+        const clamped = Math.max(0, Math.min(100, pct));
+        fill.style.width = clamped + '%';
+        pctEl.textContent = Math.round(clamped) + '%';
+    }
+    if (state) card.dataset.state = state;
+
+    // 단계별 표시: stage = 현재 활성 단계, stageDone = 끝난 단계 (또는 true면 stage까지 모두 완료)
+    if (stage || stageDone) {
+        const order = ['upload', 'stt', 'summarize'];
+        const activeIdx = stage ? order.indexOf(stage) : -1;
+        let doneIdx = -1;
+        if (stageDone === true) doneIdx = activeIdx; // stage까지 완료
+        else if (typeof stageDone === 'string') doneIdx = order.indexOf(stageDone);
+
+        order.forEach((s, i) => {
+            const stepEl = card.querySelector(`.job-card-step[data-step="${s}"]`);
+            if (!stepEl) return;
+            stepEl.dataset.active = (i === activeIdx && i > doneIdx) ? 'true' : 'false';
+            stepEl.dataset.done = (i <= doneIdx) ? 'true' : 'false';
+        });
+    }
+
+    if (error !== undefined) {
+        const errEl = card.querySelector('.job-card-error');
+        if (error) {
+            errEl.hidden = false;
+            errEl.textContent = error;
+        } else {
+            errEl.hidden = true;
+        }
+    }
+
+    // 완료 시 결과 보기 버튼 노출, 취소 버튼 숨김
+    const viewBtn = card.querySelector('[data-action="view"]');
+    const cancelBtn = card.querySelector('[data-action="cancel"]');
+    if (state === 'done') {
+        if (viewBtn) viewBtn.hidden = false;
+        if (cancelBtn) cancelBtn.hidden = true;
+    } else if (state === 'failed' || state === 'canceled') {
+        if (viewBtn) viewBtn.hidden = true;
+        if (cancelBtn) {
+            // 닫기(제거) 버튼으로 전환
+            cancelBtn.hidden = false;
+            cancelBtn.title = '카드 제거';
+        }
+    }
+}
+
+function refreshJobQueueCount() {
+    const countEl = document.getElementById('jobQueueCount');
+    if (countEl) countEl.textContent = String(getActiveJobCount());
+}
+
+function cancelJob(job) {
+    // 완료/실패 카드의 닫기 동작: 카드 제거
+    if (['done', 'failed', 'canceled'].includes(job.status)) {
+        removeJobCard(job);
+        return;
+    }
+
+    job.status = 'canceled';
+    if (job.xhr) {
+        try { job.xhr.abort(); } catch {}
+    }
+    if (job.sttProgress) job.sttProgress.stop();
+    if (job.summaryProgress) job.summaryProgress.stop();
+    updateJobCard(job, { status: '취소됨', state: 'canceled', error: null });
+    refreshJobQueueCount();
+}
+
+function removeJobCard(job) {
+    if (job.cardEl && job.cardEl.parentNode) {
+        job.cardEl.parentNode.removeChild(job.cardEl);
+    }
+    jobsById.delete(job.id);
+    // 작업이 모두 사라지면 큐 카드 숨김
+    if (jobsById.size === 0) {
+        const queueCard = document.getElementById('jobQueueCard');
+        if (queueCard) queueCard.style.display = 'none';
+    }
+    refreshJobQueueCount();
+}
+
+// 완료된 작업을 결과 페이지에 표시
+async function viewJobResult(job) {
+    if (job.status !== 'done' || !job.summary) return;
+
+    resultData = {
+        transcriptId: job.transcriptId,
+        transcript: job.transcript,
+        filename: job.file.name,
+        fileSize: job.file.size,
+        audioDuration: job.audioDuration,
+        timestamp: job.timestamp,
+        summary: job.summary,
+        summaryId: job.summaryId,
+        gptModel: job.options.gptModel,
+    };
+
+    // 버전 상태 초기화 (방금 만들어진 v1=ai_initial)
+    currentSummaryId = job.summaryId;
+    currentVersions = [{
+        version_no: 1,
+        source: 'ai_initial',
+        content: job.summary,
+        created_at: new Date().toISOString(),
+    }];
+    currentVersionNo = 1;
+    isViewingLatest = true;
+    isDiffOpen = false;
+
+    const titleEl = document.getElementById('resultTitle');
+    if (titleEl) titleEl.textContent = '회의록 생성 완료!';
+    showResult(resultData);
+    renderVersionBar();
+}
+
+// 토스트 대용 — 일단 alert
+function showJobToast(job, message) {
+    alert(`[${job.file.name}] ${message}`);
 }
 
 // 결과 표시
@@ -1990,13 +2135,12 @@ async function sendEmail() {
     }
 }
 
-// 리셋
+// 리셋 — 결과 화면을 닫고 업로드 영역으로 돌아감. 진행 중인 작업 카드는 유지.
 function reset() {
     selectedFile = null;
     transcriptData = null;
     resultData = null;
     audioDuration = 0;
-    summaryHistory = [];
     if (fileInput) fileInput.value = '';
 
     // 버전 상태 초기화
@@ -2015,15 +2159,7 @@ function reset() {
     // 업로드 카드 펼치기
     expandUploadCard();
 
-    // 스테퍼 숨기기 + 리셋
-    const stepperCard = document.getElementById('stepperCard');
-    if (stepperCard) stepperCard.style.display = 'none';
-    [1, 2, 3].forEach(n => {
-        setStepState(n, 'pending');
-        updateStepUI(n, 0, '대기 중...', '');
-    });
-
-    // 결과 숨기기
+    // 결과 숨기기 (작업 큐 카드는 유지 — 다른 진행 중 작업이 있을 수 있음)
     resultSection.style.display = 'none';
 
     clearFile();

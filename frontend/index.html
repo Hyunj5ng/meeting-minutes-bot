@@ -173,66 +173,44 @@
                     </div>
                 </div>
 
-                <!-- 스테퍼 진행 영역 -->
-                <div class="workflow-card stepper-card" id="stepperCard" style="display: none;">
-                    <div class="stepper-rail">
-                        <!-- Step 1: 파일 업로드 -->
-                        <div class="stepper-step" id="step1" data-state="pending">
-                            <div class="stepper-indicator">
-                                <div class="stepper-circle">1</div>
-                                <div class="stepper-line"></div>
-                            </div>
-                            <div class="stepper-content">
-                                <div class="stepper-header">
-                                    <p class="stepper-title">파일 업로드</p>
-                                    <span class="stepper-percentage" id="step1Progress">0%</span>
-                                </div>
-                                <p class="stepper-status" id="step1Status">대기 중...</p>
-                                <div class="stepper-progress-bar">
-                                    <div class="stepper-progress-fill" id="step1ProgressBar"></div>
-                                </div>
-                                <p class="stepper-eta" id="step1Eta"></p>
-                            </div>
-                        </div>
-
-                        <!-- Step 2: STT 변환 -->
-                        <div class="stepper-step" id="step2" data-state="pending">
-                            <div class="stepper-indicator">
-                                <div class="stepper-circle">2</div>
-                                <div class="stepper-line"></div>
-                            </div>
-                            <div class="stepper-content">
-                                <div class="stepper-header">
-                                    <p class="stepper-title">음성을 텍스트로 변환 (STT)</p>
-                                    <span class="stepper-percentage" id="step2Progress">0%</span>
-                                </div>
-                                <p class="stepper-status" id="step2Status">대기 중...</p>
-                                <div class="stepper-progress-bar">
-                                    <div class="stepper-progress-fill" id="step2ProgressBar"></div>
-                                </div>
-                                <p class="stepper-eta" id="step2Eta"></p>
-                            </div>
-                        </div>
-
-                        <!-- Step 3: AI 요약 -->
-                        <div class="stepper-step" id="step3" data-state="pending">
-                            <div class="stepper-indicator">
-                                <div class="stepper-circle">3</div>
-                            </div>
-                            <div class="stepper-content">
-                                <div class="stepper-header">
-                                    <p class="stepper-title">AI 회의록 생성</p>
-                                    <span class="stepper-percentage" id="step3Progress">0%</span>
-                                </div>
-                                <p class="stepper-status" id="step3Status">대기 중...</p>
-                                <div class="stepper-progress-bar">
-                                    <div class="stepper-progress-fill" id="step3ProgressBar"></div>
-                                </div>
-                                <p class="stepper-eta" id="step3Eta"></p>
-                            </div>
-                        </div>
+                <!-- 다중 작업 큐 (최대 3개 동시 처리) -->
+                <div class="workflow-card job-queue-card" id="jobQueueCard" style="display: none;">
+                    <div class="job-queue-header">
+                        <h3>처리 중인 회의록 <span id="jobQueueCount">0</span>/3</h3>
+                        <p class="job-queue-hint">최대 3개를 동시에 처리합니다. 각 카드는 끝나는 즉시 결과를 볼 수 있어요.</p>
                     </div>
+                    <div class="job-queue-list" id="jobQueueList"></div>
                 </div>
+
+                <!-- 작업 카드 템플릿 -->
+                <template id="jobCardTemplate">
+                    <div class="job-card" data-state="pending">
+                        <div class="job-card-head">
+                            <div class="job-card-file">
+                                <p class="job-card-filename"></p>
+                                <p class="job-card-status">대기 중...</p>
+                            </div>
+                            <div class="job-card-actions">
+                                <button type="button" class="job-card-view" data-action="view" hidden>결과 보기</button>
+                                <button type="button" class="job-card-cancel" data-action="cancel" title="취소">
+                                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+                                        <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="job-card-progress">
+                            <div class="job-card-progress-bar"><div class="job-card-progress-fill"></div></div>
+                            <span class="job-card-progress-pct">0%</span>
+                        </div>
+                        <div class="job-card-steps">
+                            <span class="job-card-step" data-step="upload">업로드</span>
+                            <span class="job-card-step" data-step="stt">STT</span>
+                            <span class="job-card-step" data-step="summarize">요약</span>
+                        </div>
+                        <p class="job-card-error" hidden></p>
+                    </div>
+                </template>
 
                 <!-- 결과 영역 (인라인) -->
                 <div class="workflow-card result-card" id="resultSection" style="display: none;">

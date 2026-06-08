@@ -2,8 +2,10 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends, Bod
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from enum import Enum
+import asyncio
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import os
@@ -84,6 +86,30 @@ MODEL_PRICING = {
 
 # 사용량 제한 (환경변수로 설정 가능) — STT 분(minutes) 단위, 일일 한도만 적용
 DAILY_STT_LIMIT_MINUTES = int(os.getenv("DAILY_STT_LIMIT_MINUTES", "300"))
+
+# 사용자별 동시 STT 작업 한도 (인메모리, 단일 워커 가정 — 멀티워커면 Redis로 교체 필요)
+MAX_CONCURRENT_STT_PER_USER = int(os.getenv("MAX_CONCURRENT_STT_PER_USER", "3"))
+_stt_active_counts: dict[int, int] = defaultdict(int)
+_stt_counts_lock = asyncio.Lock()
+
+
+@asynccontextmanager
+async def acquire_stt_slot(user_id: int):
+    """사용자별 동시 STT 슬롯 점유. 한도 초과 시 429 발생."""
+    async with _stt_counts_lock:
+        if _stt_active_counts[user_id] >= MAX_CONCURRENT_STT_PER_USER:
+            raise HTTPException(
+                status_code=429,
+                detail=f"동시에 처리할 수 있는 회의록은 최대 {MAX_CONCURRENT_STT_PER_USER}개입니다. 진행 중인 작업이 끝날 때까지 잠시 기다려주세요.",
+            )
+        _stt_active_counts[user_id] += 1
+    try:
+        yield
+    finally:
+        async with _stt_counts_lock:
+            _stt_active_counts[user_id] -= 1
+            if _stt_active_counts[user_id] <= 0:
+                _stt_active_counts.pop(user_id, None)
 
 
 def calculate_stt_cost(audio_duration_seconds: float) -> float:
@@ -440,96 +466,98 @@ async def transcribe_only(
     audio_minutes = (audio_duration or 0) / 60.0
     check_usage_limit(db, current_user.id, audio_minutes=audio_minutes)
 
-    # 파일 확장자 확인
-    allowed_extensions = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac']
-    file_ext = os.path.splitext(file.filename)[1].lower()
+    # 사용자별 동시 STT 슬롯 점유 (3개 초과 시 429)
+    async with acquire_stt_slot(current_user.id):
+        # 파일 확장자 확인
+        allowed_extensions = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac']
+        file_ext = os.path.splitext(file.filename)[1].lower()
 
-    if file_ext not in allowed_extensions:
-        raise HTTPException(
-            status_code=400,
-            detail=f"지원하지 않는 파일 형식입니다. 허용된 형식: {', '.join(allowed_extensions)}"
-        )
-
-    # 고유한 파일명 생성
-    unique_id = str(uuid.uuid4())[:8]
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    temp_filename = f"{timestamp}_{unique_id}{file_ext}"
-    temp_file_path = os.path.join(UPLOAD_DIR, temp_filename)
-
-    try:
-        # 업로드된 파일 저장 (비동기)
-        content = await file.read()
-        async with aiofiles.open(temp_file_path, "wb") as buffer:
-            await buffer.write(content)
-
-        print(f"파일 업로드 완료: {temp_file_path}")
-
-        # STT (음성 -> 텍스트) - 시간 측정
-        print("음성을 텍스트로 변환 중...")
-        start_time = time.time()
-        transcript = await stt_processor.transcribe(temp_file_path)
-        stt_time = time.time() - start_time
-        print(f"변환 완료 (길이: {len(transcript)}자, 소요 시간: {stt_time:.2f}초)")
-
-        # STT 비용 계산
-        stt_cost = calculate_stt_cost(audio_duration)
-        print(f"STT 비용: ${stt_cost:.6f}")
-
-        # 프로젝트 매핑: project_id 우선, 없으면 project_name으로 조회/생성
-        resolved_project = None
-        if project_id is not None:
-            resolved_project = crud.get_project(db, project_id, current_user.id)
-            if not resolved_project:
-                raise HTTPException(status_code=404, detail="지정한 프로젝트를 찾을 수 없습니다")
-        elif project_name and project_name.strip():
-            resolved_project = crud.get_or_create_project_by_name(
-                db, current_user.id, project_name.strip()
+        if file_ext not in allowed_extensions:
+            raise HTTPException(
+                status_code=400,
+                detail=f"지원하지 않는 파일 형식입니다. 허용된 형식: {', '.join(allowed_extensions)}"
             )
 
-        effective_project_id = resolved_project.id if resolved_project else None
-        effective_project_name = resolved_project.name if resolved_project else (project_name or None)
+        # 고유한 파일명 생성
+        unique_id = str(uuid.uuid4())[:8]
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        temp_filename = f"{timestamp}_{unique_id}{file_ext}"
+        temp_file_path = os.path.join(UPLOAD_DIR, temp_filename)
 
-        # DB에 저장 (TranscriptRecord 생성)
-        transcript_record = crud.create_transcript_record(
-            db=db,
-            filename=file.filename,
-            file_size=file_size,
-            transcript=transcript,
-            user_id=current_user.id,
-            whisper_model=whisper_model.value,
-            audio_duration=audio_duration,
-            stt_processing_time=stt_time,
-            stt_cost=stt_cost,
-            project_id=effective_project_id,
-            project_name=effective_project_name,
-            meeting_title=meeting_title,
-            attendees=attendees,
-            keywords=keywords
-        )
-        print(f"DB 저장 완료 (Transcript ID: {transcript_record.id})")
+        try:
+            # 업로드된 파일 저장 (비동기)
+            content = await file.read()
+            async with aiofiles.open(temp_file_path, "wb") as buffer:
+                await buffer.write(content)
 
-        # 사용량 기록 (분 단위)
-        crud.create_usage_record(db, current_user.id, "stt", cost=stt_cost, duration_minutes=audio_minutes)
+            print(f"파일 업로드 완료: {temp_file_path}")
 
-        return JSONResponse(content={
-            "success": True,
-            "transcript_id": transcript_record.id,
-            "filename": file.filename,
-            "transcript": transcript,
-            "timestamp": timestamp
-        })
+            # STT (음성 -> 텍스트) - 시간 측정
+            print("음성을 텍스트로 변환 중...")
+            start_time = time.time()
+            transcript = await stt_processor.transcribe(temp_file_path)
+            stt_time = time.time() - start_time
+            print(f"변환 완료 (길이: {len(transcript)}자, 소요 시간: {stt_time:.2f}초)")
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"오류 발생: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"처리 중 오류 발생: {str(e)}")
+            # STT 비용 계산
+            stt_cost = calculate_stt_cost(audio_duration)
+            print(f"STT 비용: ${stt_cost:.6f}")
 
-    finally:
-        # 업로드된 임시 파일 삭제
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
-            print(f"임시 파일 삭제: {temp_file_path}")
+            # 프로젝트 매핑: project_id 우선, 없으면 project_name으로 조회/생성
+            resolved_project = None
+            if project_id is not None:
+                resolved_project = crud.get_project(db, project_id, current_user.id)
+                if not resolved_project:
+                    raise HTTPException(status_code=404, detail="지정한 프로젝트를 찾을 수 없습니다")
+            elif project_name and project_name.strip():
+                resolved_project = crud.get_or_create_project_by_name(
+                    db, current_user.id, project_name.strip()
+                )
+
+            effective_project_id = resolved_project.id if resolved_project else None
+            effective_project_name = resolved_project.name if resolved_project else (project_name or None)
+
+            # DB에 저장 (TranscriptRecord 생성)
+            transcript_record = crud.create_transcript_record(
+                db=db,
+                filename=file.filename,
+                file_size=file_size,
+                transcript=transcript,
+                user_id=current_user.id,
+                whisper_model=whisper_model.value,
+                audio_duration=audio_duration,
+                stt_processing_time=stt_time,
+                stt_cost=stt_cost,
+                project_id=effective_project_id,
+                project_name=effective_project_name,
+                meeting_title=meeting_title,
+                attendees=attendees,
+                keywords=keywords
+            )
+            print(f"DB 저장 완료 (Transcript ID: {transcript_record.id})")
+
+            # 사용량 기록 (분 단위)
+            crud.create_usage_record(db, current_user.id, "stt", cost=stt_cost, duration_minutes=audio_minutes)
+
+            return JSONResponse(content={
+                "success": True,
+                "transcript_id": transcript_record.id,
+                "filename": file.filename,
+                "transcript": transcript,
+                "timestamp": timestamp
+            })
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"오류 발생: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"처리 중 오류 발생: {str(e)}")
+
+        finally:
+            # 업로드된 임시 파일 삭제
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+                print(f"임시 파일 삭제: {temp_file_path}")
 
 
 @app.post("/summarize")
