@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import os
 import aiofiles
+from typing import Optional
 from datetime import datetime
 from stt_module import STTProcessor
 from gpt_summarizer import GPTSummarizer
@@ -1130,6 +1131,28 @@ def _serialize_project(project, summary_count: int = 0, context_count: int = 0) 
         "summary_count": summary_count,
         "context_count": context_count,
     }
+
+
+@app.get("/me/recent-attendees")
+async def get_recent_attendees(
+    project_id: Optional[int] = None,
+    q: str = "",
+    limit: int = 20,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """사용자가 과거 회의록에 입력했던 참석자 이름을 최근순으로 반환.
+
+    - project_id 지정 시 해당 프로젝트 사용자를 우선 정렬
+    - q 지정 시 부분 일치(대소문자 무시)로 필터
+    """
+    names = crud.get_recent_attendees(db, current_user.id, project_id=project_id)
+    q_norm = (q or "").strip().lower()
+    if q_norm:
+        names = [n for n in names if q_norm in n.lower()]
+    if limit and limit > 0:
+        names = names[:limit]
+    return {"success": True, "attendees": names}
 
 
 @app.get("/projects")

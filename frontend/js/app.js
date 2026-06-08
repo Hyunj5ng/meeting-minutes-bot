@@ -1331,6 +1331,149 @@ function setupEventListeners() {
 
     // 초기 프로젝트 옵션 채우기
     populateProjectSelect();
+
+    // 참석자 자동완성
+    initAttendeeAutocomplete();
+}
+
+// ============================================
+// 참석자 자동완성 (최근 사용 + 칩)
+// ============================================
+
+let attendeeSuggestionCache = [];      // 최근 사용 참석자 (서버에서 받아온 전체 목록)
+let attendeeSuggestionProjectId = null; // 캐시가 어떤 project_id 기준인지
+let attendeeFetchAbort = null;
+const ATTENDEE_CHIP_LIMIT = 8;
+
+function initAttendeeAutocomplete() {
+    const input = document.getElementById('attendees');
+    const container = document.getElementById('attendeeSuggestions');
+    if (!input || !container) return;
+
+    // 입력 변화 시 칩 갱신
+    input.addEventListener('input', renderAttendeeChips);
+    input.addEventListener('focus', () => {
+        loadRecentAttendees().then(renderAttendeeChips);
+    });
+
+    // 프로젝트 변경 시 캐시 무효화 + 재로드
+    const projectSelect = document.getElementById('projectSelect');
+    if (projectSelect) {
+        projectSelect.addEventListener('change', () => {
+            attendeeSuggestionCache = [];
+            attendeeSuggestionProjectId = null;
+            loadRecentAttendees().then(renderAttendeeChips);
+        });
+    }
+
+    // 페이지 진입 직후 한 번 미리 로드
+    loadRecentAttendees().then(renderAttendeeChips);
+}
+
+function getCurrentProjectIdForAttendees() {
+    const sel = document.getElementById('projectSelect');
+    if (!sel) return null;
+    const val = sel.value;
+    if (!val || val === '__new__') return null;
+    const n = parseInt(val, 10);
+    return Number.isFinite(n) ? n : null;
+}
+
+async function loadRecentAttendees() {
+    const projectId = getCurrentProjectIdForAttendees();
+
+    // 같은 프로젝트 컨텍스트면 캐시 재사용
+    if (attendeeSuggestionCache.length && attendeeSuggestionProjectId === projectId) {
+        return attendeeSuggestionCache;
+    }
+
+    try {
+        if (attendeeFetchAbort) attendeeFetchAbort.abort();
+        attendeeFetchAbort = new AbortController();
+
+        const params = new URLSearchParams();
+        if (projectId !== null) params.set('project_id', String(projectId));
+        params.set('limit', '50');
+
+        const res = await authFetch(
+            `${API_BASE_URL}/me/recent-attendees?${params.toString()}`,
+            { signal: attendeeFetchAbort.signal }
+        );
+        if (!res.ok) return [];
+        const data = await res.json();
+        attendeeSuggestionCache = Array.isArray(data.attendees) ? data.attendees : [];
+        attendeeSuggestionProjectId = projectId;
+        return attendeeSuggestionCache;
+    } catch (err) {
+        if (err.name !== 'AbortError') console.warn('최근 참석자 로드 실패:', err);
+        return [];
+    }
+}
+
+function parseAttendeeInput(value) {
+    return (value || '')
+        .split(/[,;/\n]/)
+        .map(s => s.trim())
+        .filter(Boolean);
+}
+
+function getCurrentTypingFragment(value) {
+    // 마지막 콤마 뒤 부분 = 사용자가 지금 타이핑 중인 토큰
+    const idx = Math.max(value.lastIndexOf(','), value.lastIndexOf(';'), value.lastIndexOf('/'));
+    return value.slice(idx + 1).trim();
+}
+
+function renderAttendeeChips() {
+    const input = document.getElementById('attendees');
+    const container = document.getElementById('attendeeSuggestions');
+    if (!input || !container) return;
+
+    const rawValue = input.value;
+    const alreadyAdded = new Set(
+        parseAttendeeInput(rawValue).map(n => n.toLowerCase())
+    );
+    const typing = getCurrentTypingFragment(rawValue).toLowerCase();
+
+    // 필터링: 타이핑 중이면 부분 일치, 아니면 전체
+    let matches = attendeeSuggestionCache;
+    if (typing) {
+        matches = matches.filter(name => name.toLowerCase().includes(typing));
+    }
+
+    // 이미 추가된 이름은 뒤로, 나머지는 앞 — UX상 보이긴 하되 흐리게
+    matches = matches.slice(0, ATTENDEE_CHIP_LIMIT);
+
+    if (!matches.length) {
+        container.hidden = true;
+        container.innerHTML = '';
+        return;
+    }
+
+    container.hidden = false;
+    container.innerHTML = '';
+    matches.forEach(name => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'attendee-chip';
+        chip.textContent = name;
+        if (alreadyAdded.has(name.toLowerCase())) {
+            chip.classList.add('is-added');
+        }
+        chip.addEventListener('click', () => addAttendeeFromChip(name));
+        container.appendChild(chip);
+    });
+}
+
+function addAttendeeFromChip(name) {
+    const input = document.getElementById('attendees');
+    if (!input) return;
+
+    const existing = parseAttendeeInput(input.value);
+    if (existing.some(n => n.toLowerCase() === name.toLowerCase())) return;
+
+    input.value = [...existing, name].join(', ') + ', ';
+    input.focus();
+    renderAttendeeChips();
 }
 
 // 드래그 앤 드롭 핸들러
@@ -1467,7 +1610,6 @@ async function handleConvert() {
 
     formData.append('meeting_title', document.getElementById('meetingTitle').value);
     formData.append('attendees', document.getElementById('attendees').value);
-    formData.append('keywords', document.getElementById('keywords').value);
 
     try {
         // === Step 1: XHR 업로드 + STT ===

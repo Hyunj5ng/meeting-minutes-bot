@@ -1,6 +1,7 @@
 """
 CRUD (Create, Read, Update, Delete) 작업
 """
+import re
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sa_func
@@ -233,6 +234,50 @@ def search_transcript_records(
         (TranscriptRecord.filename.ilike(search_pattern)) |
         (TranscriptRecord.transcript.ilike(search_pattern))
     ).order_by(TranscriptRecord.created_at.desc()).offset(skip).limit(limit).all()
+
+
+def get_recent_attendees(
+    db: Session,
+    user_id: int,
+    project_id: Optional[int] = None,
+    scan_limit: int = 200,
+) -> List[str]:
+    """사용자의 최근 회의록에서 참석자 이름을 최근순·고유로 추출.
+
+    project_id가 주어지면 그 프로젝트 우선으로 정렬하되, 부족하면 전체에서 보강.
+    이름은 콤마/세미콜론/슬래시 등으로 분리하고 trim하여 중복 제거.
+    """
+    query = db.query(TranscriptRecord.attendees, TranscriptRecord.project_id).filter(
+        TranscriptRecord.user_id == user_id,
+        TranscriptRecord.attendees.isnot(None),
+        TranscriptRecord.attendees != "",
+    ).order_by(TranscriptRecord.created_at.desc()).limit(scan_limit)
+
+    rows = query.all()
+
+    in_project: List[str] = []
+    other: List[str] = []
+    seen = set()
+
+    for attendees_str, row_project_id in rows:
+        if not attendees_str:
+            continue
+        # 콤마/세미콜론/슬래시 모두 구분자로 처리
+        parts = re.split(r"[,;/\n]", attendees_str)
+        for raw in parts:
+            name = raw.strip()
+            if not name:
+                continue
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            if project_id is not None and row_project_id == project_id:
+                in_project.append(name)
+            else:
+                other.append(name)
+
+    return in_project + other
 
 
 # ========== SummaryRecord CRUD ==========
