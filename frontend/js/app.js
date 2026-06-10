@@ -34,6 +34,7 @@ const ESTIMATION = {
 // 전역 변수
 let selectedFiles = [];      // 업로드 대기 중인 파일들 (다중 선택 지원)
 let audioDurations = [];     // 각 파일의 오디오 길이 (초). selectedFiles와 인덱스 동기화
+let fileMetas = [];          // 각 파일의 회의 정보 {meetingTitle, attendees}. selectedFiles와 인덱스 동기화
 let transcriptData = null;
 let resultData = null;
 let summaryHistory = []; // 여러 요약 결과 저장
@@ -1308,8 +1309,12 @@ function setupEventListeners() {
     // 초기 프로젝트 옵션 채우기
     populateProjectSelect();
 
-    // 참석자 자동완성
+    // 참석자 자동완성 (글로벌 트리거)
     initAttendeeAutocomplete();
+
+    // 합치기 토글 변경 시 파일 카드 시각 표시 갱신
+    const mergeToggle = document.getElementById('mergeFilesCheckbox');
+    if (mergeToggle) mergeToggle.addEventListener('change', renderFileList);
 }
 
 // ============================================
@@ -1321,29 +1326,42 @@ let attendeeSuggestionProjectId = null; // 캐시가 어떤 project_id 기준인
 let attendeeFetchAbort = null;
 const ATTENDEE_CHIP_LIMIT = 8;
 
+// 자동완성 활성 input (포커스된 attendee input 추적)
+let activeAttendeeInput = null;
+
 function initAttendeeAutocomplete() {
-    const input = document.getElementById('attendees');
-    const container = document.getElementById('attendeeSuggestions');
-    if (!input || !container) return;
-
-    // 입력 변화 시 칩 갱신
-    input.addEventListener('input', renderAttendeeChips);
-    input.addEventListener('focus', () => {
-        loadRecentAttendees().then(renderAttendeeChips);
-    });
-
-    // 프로젝트 변경 시 캐시 무효화 + 재로드
+    // 프로젝트 변경 시 캐시 무효화 + 활성 input에 대해 재렌더
     const projectSelect = document.getElementById('projectSelect');
     if (projectSelect) {
         projectSelect.addEventListener('change', () => {
             attendeeSuggestionCache = [];
             attendeeSuggestionProjectId = null;
-            loadRecentAttendees().then(renderAttendeeChips);
+            loadRecentAttendees().then(() => renderAttendeeChips(activeAttendeeInput));
         });
     }
 
-    // 페이지 진입 직후 한 번 미리 로드
-    loadRecentAttendees().then(renderAttendeeChips);
+    // 페이지 진입 직후 한 번 미리 로드 (캐시 워밍)
+    loadRecentAttendees();
+}
+
+// 임의 attendee input과 그 옆 칩 컨테이너에 자동완성 바인딩
+function bindAttendeeAutocomplete(input, container) {
+    if (!input || !container) return;
+    input.dataset.attendeeBound = '1';
+
+    input.addEventListener('input', () => renderAttendeeChips(input));
+    input.addEventListener('focus', () => {
+        activeAttendeeInput = input;
+        loadRecentAttendees().then(() => renderAttendeeChips(input));
+    });
+    input.addEventListener('blur', () => {
+        // blur 직후 칩 클릭이 처리될 수 있도록 살짝 지연
+        setTimeout(() => {
+            if (activeAttendeeInput === input) activeAttendeeInput = null;
+            container.hidden = true;
+            container.innerHTML = '';
+        }, 150);
+    });
 }
 
 function getCurrentProjectIdForAttendees() {
@@ -1399,10 +1417,11 @@ function getCurrentTypingFragment(value) {
     return value.slice(idx + 1).trim();
 }
 
-function renderAttendeeChips() {
-    const input = document.getElementById('attendees');
-    const container = document.getElementById('attendeeSuggestions');
-    if (!input || !container) return;
+function renderAttendeeChips(input) {
+    if (!input) return;
+    // input.nextElementSibling은 .attendee-suggestions 컨테이너 (마크업 규약)
+    const container = input.parentElement?.querySelector('.attendee-suggestions');
+    if (!container) return;
 
     const rawValue = input.value;
     const alreadyAdded = new Set(
@@ -1410,13 +1429,10 @@ function renderAttendeeChips() {
     );
     const typing = getCurrentTypingFragment(rawValue).toLowerCase();
 
-    // 필터링: 타이핑 중이면 부분 일치, 아니면 전체
     let matches = attendeeSuggestionCache;
     if (typing) {
         matches = matches.filter(name => name.toLowerCase().includes(typing));
     }
-
-    // 이미 추가된 이름은 뒤로, 나머지는 앞 — UX상 보이긴 하되 흐리게
     matches = matches.slice(0, ATTENDEE_CHIP_LIMIT);
 
     if (!matches.length) {
@@ -1435,21 +1451,24 @@ function renderAttendeeChips() {
         if (alreadyAdded.has(name.toLowerCase())) {
             chip.classList.add('is-added');
         }
-        chip.addEventListener('click', () => addAttendeeFromChip(name));
+        // mousedown 사용 — blur보다 먼저 발생해서 input 값 갱신 가능
+        chip.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            addAttendeeFromChip(input, name);
+        });
         container.appendChild(chip);
     });
 }
 
-function addAttendeeFromChip(name) {
-    const input = document.getElementById('attendees');
+function addAttendeeFromChip(input, name) {
     if (!input) return;
-
     const existing = parseAttendeeInput(input.value);
     if (existing.some(n => n.toLowerCase() === name.toLowerCase())) return;
-
     input.value = [...existing, name].join(', ') + ', ';
+    // 갱신 이벤트 발생 — 파일별 meta 동기화 트리거
+    input.dispatchEvent(new Event('input', { bubbles: true }));
     input.focus();
-    renderAttendeeChips();
+    renderAttendeeChips(input);
 }
 
 // 드래그 앤 드롭 핸들러
@@ -1503,6 +1522,7 @@ async function handleFiles(fileList) {
     for (const f of valid) {
         if (!existingKeys.has(keyOf(f))) {
             selectedFiles.push(f);
+            fileMetas.push({ meetingTitle: '', attendees: '' });
             existingKeys.add(keyOf(f));
         }
     }
@@ -1511,6 +1531,7 @@ async function handleFiles(fileList) {
     if (selectedFiles.length > 10) {
         alert('한 번에 처리 가능한 파일은 최대 10개입니다.');
         selectedFiles = selectedFiles.slice(0, 10);
+        fileMetas = fileMetas.slice(0, 10);
     }
 
     // 각 파일 audio_duration 측정 (병렬). 실패 시 0.
@@ -1535,37 +1556,74 @@ function renderFileList() {
         return;
     }
 
-    if (uploadArea) uploadArea.style.display = 'block'; // 추가 파일 선택 가능하도록 유지
+    if (uploadArea) uploadArea.style.display = 'block';
     listEl.style.display = 'block';
     countEl.textContent = String(selectedFiles.length);
     itemsEl.innerHTML = '';
 
+    const mergeOn = !!(mergeToggle?.checked) && selectedFiles.length >= 2;
+
     selectedFiles.forEach((file, idx) => {
         const li = document.createElement('li');
         li.className = 'file-info-item';
+        if (mergeOn) {
+            li.classList.add(idx === 0 ? 'is-merge-primary' : 'is-merge-secondary');
+        }
+
         const dur = audioDurations[idx] || 0;
-        const meta = dur > 0
+        const sizeText = dur > 0
             ? `${formatFileSize(file.size)} · ${Math.floor(dur / 60)}분 ${Math.round(dur % 60)}초`
             : formatFileSize(file.size);
+        const meta = fileMetas[idx] || { meetingTitle: '', attendees: '' };
+
         li.innerHTML = `
-            <div class="file-info-item-meta">
-                <span class="file-info-item-order">${idx + 1}</span>
-                <span class="file-info-item-name"></span>
-                <span class="file-info-item-size"></span>
+            <div class="file-info-item-row">
+                <div class="file-info-item-meta">
+                    <span class="file-info-item-order">${idx + 1}</span>
+                    <span class="file-info-item-name"></span>
+                    <span class="file-info-item-size"></span>
+                </div>
+                <button type="button" class="file-info-item-remove" title="이 파일 제거" aria-label="제거">
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+                        <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                </button>
             </div>
-            <button type="button" class="file-info-item-remove" title="이 파일 제거" aria-label="제거">
-                <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
-                    <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                </svg>
-            </button>
+            <div class="file-info-item-meta-inputs">
+                <div class="file-info-item-meta-field">
+                    <label>회의 제목</label>
+                    <input type="text" class="text-input js-file-title" placeholder="예: 주간 팀 미팅">
+                </div>
+                <div class="file-info-item-meta-field">
+                    <label>참석자</label>
+                    <input type="text" class="text-input js-file-attendees" placeholder="홍길동, 김철수" autocomplete="off">
+                    <div class="attendee-suggestions" hidden></div>
+                </div>
+            </div>
+            <p class="merge-secondary-notice">합치기 모드 — 첫 번째 파일의 회의 정보가 사용됩니다</p>
         `;
         li.querySelector('.file-info-item-name').textContent = file.name;
-        li.querySelector('.file-info-item-size').textContent = meta;
+        li.querySelector('.file-info-item-size').textContent = sizeText;
         li.querySelector('.file-info-item-remove').addEventListener('click', () => removeFileAt(idx));
+
+        const titleInput = li.querySelector('.js-file-title');
+        const attInput = li.querySelector('.js-file-attendees');
+        titleInput.value = meta.meetingTitle;
+        attInput.value = meta.attendees;
+        titleInput.addEventListener('input', (e) => {
+            if (fileMetas[idx]) fileMetas[idx].meetingTitle = e.target.value;
+        });
+        attInput.addEventListener('input', (e) => {
+            if (fileMetas[idx]) fileMetas[idx].attendees = e.target.value;
+        });
+        // 참석자 자동완성 바인딩
+        const chipsEl = li.querySelector('.attendee-suggestions');
+        bindAttendeeAutocomplete(attInput, chipsEl);
+
         itemsEl.appendChild(li);
     });
 
-    // 합치기 토글은 2개 이상일 때만 의미 있음
+    // 합치기 토글: 2개 이상일 때만 의미 있음
     if (mergeToggle) {
         const parent = mergeToggle.closest('.merge-toggle');
         if (parent) parent.style.display = selectedFiles.length >= 2 ? 'grid' : 'none';
@@ -1576,6 +1634,7 @@ function renderFileList() {
 function removeFileAt(idx) {
     selectedFiles.splice(idx, 1);
     audioDurations.splice(idx, 1);
+    fileMetas.splice(idx, 1);
     renderFileList();
     if (convertBtn) convertBtn.disabled = selectedFiles.length === 0;
 }
@@ -1610,6 +1669,7 @@ function formatFileSize(bytes) {
 function clearFile() {
     selectedFiles = [];
     audioDurations = [];
+    fileMetas = [];
     if (fileInput) fileInput.value = '';
     if (uploadArea) uploadArea.style.display = 'block';
     const listEl = document.getElementById('fileInfoList');
@@ -1648,18 +1708,16 @@ function getActiveJobCount() {
 async function handleConvert() {
     if (!selectedFiles.length) return;
 
-    // 현재 폼 상태 캡처 (이후 폼이 초기화되어도 작업은 자체 컨텍스트로 진행)
+    // 프로젝트 + AI 모델은 모든 파일 공통
     const projectSelectEl = document.getElementById('projectSelect');
     const projectNameInput = document.getElementById('projectName');
     const selectedProjectVal = projectSelectEl ? projectSelectEl.value : '';
     const gptSelect = document.getElementById('gptModelUpload');
     const mergeMode = !!(document.getElementById('mergeFilesCheckbox')?.checked) && selectedFiles.length >= 2;
 
-    const sharedOptions = {
+    const commonOptions = {
         projectId: (selectedProjectVal && selectedProjectVal !== '__new__') ? selectedProjectVal : null,
         projectName: (selectedProjectVal === '__new__' && projectNameInput) ? projectNameInput.value.trim() : '',
-        meetingTitle: document.getElementById('meetingTitle').value,
-        attendees: document.getElementById('attendees').value,
         gptModel: gptSelect.value,
         gptModelName: gptSelect.options[gptSelect.selectedIndex].text.split(' - ')[0],
         autoEmail: document.getElementById('autoEmailCheckbox')?.checked || false,
@@ -1668,23 +1726,29 @@ async function handleConvert() {
     const queueCard = document.getElementById('jobQueueCard');
     if (queueCard) queueCard.style.display = 'block';
 
-    // 합치기 모드: 모든 파일을 1개 job으로
-    // 일반 모드: 각 파일마다 별도 job
-    const jobsToCreate = mergeMode ? [{ files: [...selectedFiles], durations: [...audioDurations] }]
-                                   : selectedFiles.map((f, i) => ({ files: [f], durations: [audioDurations[i] || 0] }));
-
-    for (const spec of jobsToCreate) {
-        const job = makeJob(spec.files, spec.durations, sharedOptions, mergeMode);
+    if (mergeMode) {
+        // 합치기 모드: 1개 job, 첫 번째 파일의 메타 사용
+        const primaryMeta = fileMetas[0] || { meetingTitle: '', attendees: '' };
+        const jobOptions = { ...commonOptions, meetingTitle: primaryMeta.meetingTitle, attendees: primaryMeta.attendees };
+        const job = makeJob([...selectedFiles], [...audioDurations], jobOptions, true);
         jobsById.set(job.id, job);
         renderJobCard(job);
+    } else {
+        // 일반 모드: 파일마다 별도 job + 각자의 meta
+        selectedFiles.forEach((f, i) => {
+            const meta = fileMetas[i] || { meetingTitle: '', attendees: '' };
+            const jobOptions = { ...commonOptions, meetingTitle: meta.meetingTitle, attendees: meta.attendees };
+            const job = makeJob([f], [audioDurations[i] || 0], jobOptions, false);
+            jobsById.set(job.id, job);
+            renderJobCard(job);
+        });
     }
 
     refreshJobQueueCount();
 
-    // 폼 초기화 (파일만, 메타 입력은 유지)
+    // 폼 초기화 (파일만, 프로젝트/AI 모델은 유지 — 연속 업로드 편의)
     clearFile();
 
-    // 큐 러너 가동 — 활성 슬롯이 비어있는 만큼 작업 시작
     runJobQueue();
 }
 

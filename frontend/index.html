@@ -91,27 +91,16 @@
                             </label>
                         </div>
 
-                        <!-- 회의 정보 입력 -->
+                        <!-- 프로젝트 (모든 파일 공통) -->
                         <div class="options-section">
-                            <h4>회의 정보</h4>
-                            <div class="options-grid">
-                                <div class="option-group">
-                                    <label for="projectSelect">프로젝트</label>
-                                    <select id="projectSelect" class="select-input">
-                                        <option value="">— 프로젝트 없음 —</option>
-                                        <option value="__new__">+ 새 프로젝트 만들기...</option>
-                                    </select>
-                                    <input type="text" id="projectName" class="text-input" placeholder="새 프로젝트 이름" style="display: none; margin-top: 0.4rem;">
-                                </div>
-                                <div class="option-group">
-                                    <label for="meetingTitle">회의 제목</label>
-                                    <input type="text" id="meetingTitle" class="text-input" placeholder="예: 주간 팀 미팅">
-                                </div>
-                                <div class="option-group">
-                                    <label for="attendees">참석자</label>
-                                    <input type="text" id="attendees" class="text-input" placeholder="홍길동, 김철수, 박영희" autocomplete="off">
-                                    <div id="attendeeSuggestions" class="attendee-suggestions" hidden></div>
-                                </div>
+                            <h4>프로젝트 <span class="options-section-hint">(모든 파일에 공통 적용)</span></h4>
+                            <div class="option-group">
+                                <label for="projectSelect">프로젝트</label>
+                                <select id="projectSelect" class="select-input">
+                                    <option value="">— 프로젝트 없음 —</option>
+                                    <option value="__new__">+ 새 프로젝트 만들기...</option>
+                                </select>
+                                <input type="text" id="projectName" class="text-input" placeholder="새 프로젝트 이름" style="display: none; margin-top: 0.4rem;">
                             </div>
                         </div>
 
