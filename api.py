@@ -560,6 +560,154 @@ async def transcribe_only(
                 print(f"임시 파일 삭제: {temp_file_path}")
 
 
+# 합치기 모드에서 파트 간 구분자 (모델에게 "휴식 후 이어진 세션"임을 알림)
+MERGE_PART_SEPARATOR = "\n\n---\n\n"
+
+
+@app.post("/transcribe-merge")
+async def transcribe_merge(
+    files: list[UploadFile] = File(..., description="음성 파일 여러 개 (선택한 순서대로 합쳐짐)"),
+    audio_durations: str = Form("", description="각 파일 길이(초) — 쉼표로 구분된 숫자열. 합산하여 사용량 계산"),
+    file_sizes: str = Form("", description="각 파일 크기(bytes) — 쉼표로 구분"),
+    project_id: int = Form(None),
+    project_name: str = Form(""),
+    meeting_title: str = Form("", description="회의 제목"),
+    attendees: str = Form(""),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """여러 음성 파일을 순차 STT → 구분선으로 합쳐 단일 TranscriptRecord 생성.
+
+    같은 회의가 휴식 후 이어진 케이스에 사용. 슬롯은 1개만 점유 (하나의 회의록).
+    """
+    if not files or len(files) < 2:
+        raise HTTPException(status_code=400, detail="합치기 모드는 최소 2개 파일이 필요합니다")
+    if len(files) > 10:
+        raise HTTPException(status_code=400, detail="한 번에 합칠 수 있는 파일은 최대 10개입니다")
+
+    # 길이/크기 파싱 (없으면 0으로 채움)
+    def _parse_floats(s: str, n: int) -> list[float]:
+        if not s:
+            return [0.0] * n
+        try:
+            parts = [float(x.strip()) for x in s.split(",") if x.strip()]
+        except ValueError:
+            return [0.0] * n
+        if len(parts) < n:
+            parts += [0.0] * (n - len(parts))
+        return parts[:n]
+
+    durations = _parse_floats(audio_durations, len(files))
+    sizes_raw = _parse_floats(file_sizes, len(files))
+    sizes = [int(x) for x in sizes_raw]
+
+    total_seconds = sum(durations)
+    total_minutes = total_seconds / 60.0
+    total_size = sum(sizes)
+
+    # 사용량 한도 확인 (합계 분으로)
+    check_usage_limit(db, current_user.id, audio_minutes=total_minutes)
+
+    # 확장자 검사
+    allowed_extensions = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac']
+    for f in files:
+        ext = os.path.splitext(f.filename)[1].lower()
+        if ext not in allowed_extensions:
+            raise HTTPException(
+                status_code=400,
+                detail=f"지원하지 않는 파일 형식입니다 ({f.filename}). 허용된 형식: {', '.join(allowed_extensions)}",
+            )
+
+    # 슬롯 점유 (1개 — 하나의 회의록이므로)
+    async with acquire_stt_slot(current_user.id):
+        temp_paths: list[str] = []
+        try:
+            # 모든 파일을 임시 저장
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            for idx, f in enumerate(files):
+                unique_id = str(uuid.uuid4())[:8]
+                ext = os.path.splitext(f.filename)[1].lower()
+                temp_filename = f"{timestamp}_{unique_id}_part{idx + 1}{ext}"
+                temp_path = os.path.join(UPLOAD_DIR, temp_filename)
+                content = await f.read()
+                async with aiofiles.open(temp_path, "wb") as buffer:
+                    await buffer.write(content)
+                temp_paths.append(temp_path)
+                print(f"[merge] 파트 {idx + 1}/{len(files)} 업로드 완료: {temp_path}")
+
+            # 순차 STT
+            transcripts: list[str] = []
+            total_stt_time = 0.0
+            for idx, temp_path in enumerate(temp_paths):
+                print(f"[merge] 파트 {idx + 1} STT 시작...")
+                t0 = time.time()
+                text = await stt_processor.transcribe(temp_path)
+                stt_time = time.time() - t0
+                total_stt_time += stt_time
+                transcripts.append(text)
+                print(f"[merge] 파트 {idx + 1} 변환 완료 ({len(text)}자, {stt_time:.2f}초)")
+
+            merged_transcript = MERGE_PART_SEPARATOR.join(transcripts)
+            total_cost = calculate_stt_cost(total_seconds)
+
+            # 프로젝트 매핑
+            resolved_project = None
+            if project_id is not None:
+                resolved_project = crud.get_project(db, project_id, current_user.id)
+                if not resolved_project:
+                    raise HTTPException(status_code=404, detail="지정한 프로젝트를 찾을 수 없습니다")
+            elif project_name and project_name.strip():
+                resolved_project = crud.get_or_create_project_by_name(
+                    db, current_user.id, project_name.strip()
+                )
+
+            effective_project_id = resolved_project.id if resolved_project else None
+            effective_project_name = resolved_project.name if resolved_project else (project_name or None)
+
+            # 합쳐서 단일 레코드 생성. filename은 파트 개수 명시
+            display_filename = f"{files[0].filename} 외 {len(files) - 1}개 (합침)"
+            transcript_record = crud.create_transcript_record(
+                db=db,
+                filename=display_filename,
+                file_size=total_size,
+                transcript=merged_transcript,
+                user_id=current_user.id,
+                whisper_model="base",
+                audio_duration=total_seconds,
+                stt_processing_time=total_stt_time,
+                stt_cost=total_cost,
+                project_id=effective_project_id,
+                project_name=effective_project_name,
+                meeting_title=meeting_title,
+                attendees=attendees,
+            )
+            print(f"[merge] DB 저장 완료 (Transcript ID: {transcript_record.id}, 총 {len(files)}개 파트 합침)")
+
+            crud.create_usage_record(db, current_user.id, "stt", cost=total_cost, duration_minutes=total_minutes)
+
+            return JSONResponse(content={
+                "success": True,
+                "transcript_id": transcript_record.id,
+                "filename": display_filename,
+                "transcript": merged_transcript,
+                "timestamp": timestamp,
+                "parts": len(files),
+            })
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"[merge] 오류 발생: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"합치기 처리 중 오류 발생: {str(e)}")
+        finally:
+            for p in temp_paths:
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+
+
 @app.post("/summarize")
 async def summarize_transcript(
     transcript_id: int = Form(..., description="Transcript 레코드 ID"),

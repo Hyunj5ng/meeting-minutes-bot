@@ -70,29 +70,25 @@
                                 <path d="M32 16V40M32 16L24 24M32 16L40 24M16 48H48" stroke="#9CA3AF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
                             <h3>음성 파일을 드래그하거나 클릭하세요</h3>
-                            <p>지원 형식: MP3, WAV, M4A, OGG, FLAC, AAC</p>
-                            <input type="file" id="fileInput" accept=".mp3,.wav,.m4a,.ogg,.flac,.aac" hidden>
+                            <p>여러 파일을 한 번에 선택할 수 있어요 · 지원: MP3, WAV, M4A, OGG, FLAC, AAC</p>
+                            <input type="file" id="fileInput" accept=".mp3,.wav,.m4a,.ogg,.flac,.aac" multiple hidden>
                             <button class="btn-browse" onclick="event.stopPropagation(); document.getElementById('fileInput').click()">
                                 파일 선택
                             </button>
                         </div>
 
-                        <!-- 선택된 파일 정보 -->
-                        <div class="file-info" id="fileInfo" style="display: none;">
-                            <div class="file-details">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="#10B981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                                </svg>
-                                <div>
-                                    <p class="file-name" id="fileName"></p>
-                                    <p class="file-size" id="fileSize"></p>
-                                </div>
+                        <!-- 선택된 파일 정보 (다중 파일 리스트) -->
+                        <div class="file-info-list" id="fileInfoList" style="display: none;">
+                            <div class="file-info-list-header">
+                                <span><strong id="fileInfoCount">0</strong>개 파일 선택됨</span>
+                                <button type="button" class="file-info-clear" id="fileInfoClear">전체 지우기</button>
                             </div>
-                            <button class="btn-remove" id="removeFile">
-                                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                </svg>
-                            </button>
+                            <ul class="file-info-items" id="fileInfoItems"></ul>
+                            <label class="merge-toggle">
+                                <input type="checkbox" id="mergeFilesCheckbox">
+                                <span class="merge-toggle-label">이 파일들을 하나의 회의록으로 합치기</span>
+                                <span class="merge-toggle-hint">휴식 후 이어진 회의처럼 시간이 연결된 경우 체크</span>
+                            </label>
                         </div>
 
                         <!-- 회의 정보 입력 -->

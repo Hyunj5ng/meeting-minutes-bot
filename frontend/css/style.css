@@ -385,6 +385,154 @@ body {
     background: #FEE2E2;
 }
 
+/* 다중 파일 리스트 (file-info-list) */
+.file-info-list {
+    background: var(--primary-light);
+    border: 1px solid #99F6E4;
+    border-radius: 0.625rem;
+    padding: 0.875rem 1rem;
+    margin-top: 1.5rem;
+}
+
+.file-info-list-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.625rem;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+.file-info-list-header strong {
+    color: var(--primary-hover);
+}
+
+.file-info-clear {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    transition: all 0.15s ease;
+}
+
+.file-info-clear:hover {
+    color: var(--danger-color);
+    background: #FEE2E2;
+}
+
+.file-info-items {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.file-info-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem;
+}
+
+.file-info-item-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 0;
+}
+
+.file-info-item-order {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    padding: 0 0.4rem;
+    background: var(--primary-color);
+    color: white;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.file-info-item-name {
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.file-info-item-size {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+
+.file-info-item-remove {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+    display: flex;
+    align-items: center;
+    transition: all 0.15s ease;
+}
+
+.file-info-item-remove:hover {
+    color: var(--danger-color);
+    background: #FEE2E2;
+}
+
+.merge-toggle {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 0.5rem;
+    align-items: start;
+    margin-top: 0.875rem;
+    padding: 0.625rem 0.75rem;
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.merge-toggle input[type="checkbox"] {
+    margin-top: 0.125rem;
+}
+
+.merge-toggle-label {
+    grid-column: 2;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.merge-toggle-hint {
+    grid-column: 2;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    margin-top: 0.125rem;
+}
+
+.merge-toggle input[type="checkbox"]:checked ~ .merge-toggle-label {
+    color: var(--primary-hover);
+}
+
 /* 옵션 섹션 */
 .options-section {
     margin-top: 2rem;

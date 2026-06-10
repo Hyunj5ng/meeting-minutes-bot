@@ -32,10 +32,10 @@ const ESTIMATION = {
 };
 
 // 전역 변수
-let selectedFile = null;
+let selectedFiles = [];      // 업로드 대기 중인 파일들 (다중 선택 지원)
+let audioDurations = [];     // 각 파일의 오디오 길이 (초). selectedFiles와 인덱스 동기화
 let transcriptData = null;
 let resultData = null;
-let audioDuration = 0; // 오디오 길이 (초)
 let summaryHistory = []; // 여러 요약 결과 저장
 let currentSummaryMarkdown = ''; // 현재 요약 마크다운 원본 (지금 화면에 표시되는 것)
 let isEditMode = false;
@@ -65,8 +65,8 @@ let _isRefreshing = false;
 let _refreshPromise = null;
 
 // DOM 요소 (로그인 후 초기화)
-let uploadArea, fileInput, fileInfo, fileName, fileSize;
-let removeFileBtn, convertBtn, resultSection, copyBtn, resetBtn;
+let uploadArea, fileInput;
+let convertBtn, resultSection, copyBtn, resetBtn;
 
 // ============================================
 // RealisticProgress 클래스
@@ -1194,10 +1194,6 @@ async function fetchUsageInfo() {
 function initDomElements() {
     uploadArea = document.getElementById('uploadArea');
     fileInput = document.getElementById('fileInput');
-    fileInfo = document.getElementById('fileInfo');
-    fileName = document.getElementById('fileName');
-    fileSize = document.getElementById('fileSize');
-    removeFileBtn = document.getElementById('removeFile');
     convertBtn = document.getElementById('convertBtn');
     resultSection = document.getElementById('resultSection');
     copyBtn = document.getElementById('copyBtn');
@@ -1211,7 +1207,10 @@ function setupEventListeners() {
     uploadArea.addEventListener('dragleave', handleDragLeave);
     uploadArea.addEventListener('drop', handleDrop);
     fileInput.addEventListener('change', handleFileSelect);
-    removeFileBtn.addEventListener('click', clearFile);
+
+    // 다중 파일 리스트 "전체 지우기"
+    const clearAllBtn = document.getElementById('fileInfoClear');
+    if (clearAllBtn) clearAllBtn.addEventListener('click', clearFile);
 
     // 변환 버튼
     convertBtn.addEventListener('click', handleConvert);
@@ -1470,44 +1469,115 @@ function handleDrop(e) {
 
     const files = e.dataTransfer.files;
     if (files.length > 0) {
-        handleFile(files[0]);
+        handleFiles(files);
     }
 }
 
-// 파일 선택 핸들러
+// 파일 선택 핸들러 (multiple 지원)
 function handleFileSelect(e) {
     const files = e.target.files;
     if (files.length > 0) {
-        handleFile(files[0]);
+        handleFiles(files);
     }
 }
 
-// 파일 처리
-async function handleFile(file) {
+// 다중 파일 처리: 검증 + 길이 측정 + UI 반영
+async function handleFiles(fileList) {
     const allowedExtensions = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac'];
-    const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+    const incoming = Array.from(fileList);
 
-    if (!allowedExtensions.includes(fileExtension)) {
-        alert('지원하지 않는 파일 형식입니다.\n지원 형식: MP3, WAV, M4A, OGG, FLAC, AAC');
+    // 확장자 검증
+    const invalid = incoming.filter(f => {
+        const ext = '.' + f.name.split('.').pop().toLowerCase();
+        return !allowedExtensions.includes(ext);
+    });
+    if (invalid.length) {
+        alert(`지원하지 않는 파일 형식입니다.\n지원 형식: MP3, WAV, M4A, OGG, FLAC, AAC\n\n제외: ${invalid.map(f => f.name).join(', ')}`);
+    }
+    const valid = incoming.filter(f => !invalid.includes(f));
+    if (!valid.length) return;
+
+    // 기존 선택과 합치되 (이름+크기) 기준 중복 제거
+    const keyOf = f => `${f.name}::${f.size}`;
+    const existingKeys = new Set(selectedFiles.map(keyOf));
+    for (const f of valid) {
+        if (!existingKeys.has(keyOf(f))) {
+            selectedFiles.push(f);
+            existingKeys.add(keyOf(f));
+        }
+    }
+
+    // 합치기 모드는 최대 10개 (백엔드와 동기화)
+    if (selectedFiles.length > 10) {
+        alert('한 번에 처리 가능한 파일은 최대 10개입니다.');
+        selectedFiles = selectedFiles.slice(0, 10);
+    }
+
+    // 각 파일 audio_duration 측정 (병렬). 실패 시 0.
+    audioDurations = await Promise.all(
+        selectedFiles.map(f => getAudioDuration(f).catch(() => 0))
+    );
+
+    renderFileList();
+    if (convertBtn) convertBtn.disabled = selectedFiles.length === 0;
+}
+
+function renderFileList() {
+    const listEl = document.getElementById('fileInfoList');
+    const itemsEl = document.getElementById('fileInfoItems');
+    const countEl = document.getElementById('fileInfoCount');
+    const mergeToggle = document.getElementById('mergeFilesCheckbox');
+    if (!listEl || !itemsEl || !countEl) return;
+
+    if (selectedFiles.length === 0) {
+        listEl.style.display = 'none';
+        if (uploadArea) uploadArea.style.display = 'block';
         return;
     }
 
-    selectedFile = file;
+    if (uploadArea) uploadArea.style.display = 'block'; // 추가 파일 선택 가능하도록 유지
+    listEl.style.display = 'block';
+    countEl.textContent = String(selectedFiles.length);
+    itemsEl.innerHTML = '';
 
-    try {
-        audioDuration = await getAudioDuration(file);
-        console.log(`오디오 길이: ${Math.round(audioDuration)}초 (${Math.floor(audioDuration / 60)}분 ${Math.round(audioDuration % 60)}초)`);
-    } catch (error) {
-        console.warn('오디오 길이 계산 실패, 파일 크기 기반으로 추정합니다:', error);
-        audioDuration = 0;
+    selectedFiles.forEach((file, idx) => {
+        const li = document.createElement('li');
+        li.className = 'file-info-item';
+        const dur = audioDurations[idx] || 0;
+        const meta = dur > 0
+            ? `${formatFileSize(file.size)} · ${Math.floor(dur / 60)}분 ${Math.round(dur % 60)}초`
+            : formatFileSize(file.size);
+        li.innerHTML = `
+            <div class="file-info-item-meta">
+                <span class="file-info-item-order">${idx + 1}</span>
+                <span class="file-info-item-name"></span>
+                <span class="file-info-item-size"></span>
+            </div>
+            <button type="button" class="file-info-item-remove" title="이 파일 제거" aria-label="제거">
+                <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+                    <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+            </button>
+        `;
+        li.querySelector('.file-info-item-name').textContent = file.name;
+        li.querySelector('.file-info-item-size').textContent = meta;
+        li.querySelector('.file-info-item-remove').addEventListener('click', () => removeFileAt(idx));
+        itemsEl.appendChild(li);
+    });
+
+    // 합치기 토글은 2개 이상일 때만 의미 있음
+    if (mergeToggle) {
+        const parent = mergeToggle.closest('.merge-toggle');
+        if (parent) parent.style.display = selectedFiles.length >= 2 ? 'grid' : 'none';
+        if (selectedFiles.length < 2) mergeToggle.checked = false;
     }
+}
 
-    fileName.textContent = file.name;
-    fileSize.textContent = formatFileSize(file.size);
-
-    uploadArea.style.display = 'none';
-    fileInfo.style.display = 'flex';
-    convertBtn.disabled = false;
+function removeFileAt(idx) {
+    selectedFiles.splice(idx, 1);
+    audioDurations.splice(idx, 1);
+    renderFileList();
+    if (convertBtn) convertBtn.disabled = selectedFiles.length === 0;
 }
 
 function getAudioDuration(file) {
@@ -1538,11 +1608,15 @@ function formatFileSize(bytes) {
 }
 
 function clearFile() {
-    selectedFile = null;
-    fileInput.value = '';
-    uploadArea.style.display = 'block';
-    fileInfo.style.display = 'none';
-    convertBtn.disabled = true;
+    selectedFiles = [];
+    audioDurations = [];
+    if (fileInput) fileInput.value = '';
+    if (uploadArea) uploadArea.style.display = 'block';
+    const listEl = document.getElementById('fileInfoList');
+    if (listEl) listEl.style.display = 'none';
+    if (convertBtn) convertBtn.disabled = true;
+    const mergeToggle = document.getElementById('mergeFilesCheckbox');
+    if (mergeToggle) mergeToggle.checked = false;
 }
 
 // ============================================
@@ -1572,67 +1646,94 @@ function getActiveJobCount() {
 }
 
 async function handleConvert() {
-    if (!selectedFile) return;
+    if (!selectedFiles.length) return;
 
-    // 클라이언트 측 동시성 캡 (서버에서도 강제됨)
-    if (getActiveJobCount() >= MAX_CONCURRENT_JOBS) {
-        alert(`동시 처리 가능한 회의록은 최대 ${MAX_CONCURRENT_JOBS}개입니다. 진행 중인 작업이 끝난 뒤 다시 시도해주세요.`);
-        return;
-    }
-
-    // 현재 폼 상태를 작업에 캡처 (이후 폼은 초기화되어도 작업은 자체 컨텍스트로 진행)
+    // 현재 폼 상태 캡처 (이후 폼이 초기화되어도 작업은 자체 컨텍스트로 진행)
     const projectSelectEl = document.getElementById('projectSelect');
     const projectNameInput = document.getElementById('projectName');
     const selectedProjectVal = projectSelectEl ? projectSelectEl.value : '';
     const gptSelect = document.getElementById('gptModelUpload');
+    const mergeMode = !!(document.getElementById('mergeFilesCheckbox')?.checked) && selectedFiles.length >= 2;
 
-    const job = {
+    const sharedOptions = {
+        projectId: (selectedProjectVal && selectedProjectVal !== '__new__') ? selectedProjectVal : null,
+        projectName: (selectedProjectVal === '__new__' && projectNameInput) ? projectNameInput.value.trim() : '',
+        meetingTitle: document.getElementById('meetingTitle').value,
+        attendees: document.getElementById('attendees').value,
+        gptModel: gptSelect.value,
+        gptModelName: gptSelect.options[gptSelect.selectedIndex].text.split(' - ')[0],
+        autoEmail: document.getElementById('autoEmailCheckbox')?.checked || false,
+    };
+
+    const queueCard = document.getElementById('jobQueueCard');
+    if (queueCard) queueCard.style.display = 'block';
+
+    // 합치기 모드: 모든 파일을 1개 job으로
+    // 일반 모드: 각 파일마다 별도 job
+    const jobsToCreate = mergeMode ? [{ files: [...selectedFiles], durations: [...audioDurations] }]
+                                   : selectedFiles.map((f, i) => ({ files: [f], durations: [audioDurations[i] || 0] }));
+
+    for (const spec of jobsToCreate) {
+        const job = makeJob(spec.files, spec.durations, sharedOptions, mergeMode);
+        jobsById.set(job.id, job);
+        renderJobCard(job);
+    }
+
+    refreshJobQueueCount();
+
+    // 폼 초기화 (파일만, 메타 입력은 유지)
+    clearFile();
+
+    // 큐 러너 가동 — 활성 슬롯이 비어있는 만큼 작업 시작
+    runJobQueue();
+}
+
+function makeJob(files, durations, options, mergeMode) {
+    const totalSize = files.reduce((s, f) => s + f.size, 0);
+    const totalDuration = (durations || []).reduce((s, d) => s + (d || 0), 0);
+    const primary = files[0];
+    return {
         id: genJobId(),
-        file: selectedFile,
-        audioDuration: audioDuration || 0,
-        status: 'queued',
+        mergeMode,
+        files,
+        durations,
+        totalSize,
+        totalDuration,
+        displayName: mergeMode && files.length > 1
+            ? `${primary.name} 외 ${files.length - 1}개 (합침)`
+            : primary.name,
+        status: 'queued',         // queued | uploading | stt | summarizing | done | failed | canceled
         progress: 0,
-        stage: null,            // upload | stt | summarize
+        stage: null,
         transcriptId: null,
         transcript: null,
         summary: null,
         summaryId: null,
         timestamp: null,
-        options: {
-            projectId: (selectedProjectVal && selectedProjectVal !== '__new__') ? selectedProjectVal : null,
-            projectName: (selectedProjectVal === '__new__' && projectNameInput) ? projectNameInput.value.trim() : '',
-            meetingTitle: document.getElementById('meetingTitle').value,
-            attendees: document.getElementById('attendees').value,
-            gptModel: gptSelect.value,
-            gptModelName: gptSelect.options[gptSelect.selectedIndex].text.split(' - ')[0],
-            autoEmail: document.getElementById('autoEmailCheckbox')?.checked || false,
-        },
+        options,
         xhr: null,
         sttProgress: null,
         summaryProgress: null,
         error: null,
         cardEl: null,
     };
-    jobsById.set(job.id, job);
+}
 
-    // 큐 카드 표시 + 카드 추가 (업로드 카드는 펼친 채 유지하여 다음 파일 즉시 수령 가능)
-    const queueCard = document.getElementById('jobQueueCard');
-    if (queueCard) queueCard.style.display = 'block';
-    renderJobCard(job);
-    refreshJobQueueCount();
+// 큐 러너: 활성 작업이 한도 미만이고 queued가 있으면 다음 작업 시작
+function runJobQueue() {
+    while (getActiveRunningCount() < MAX_CONCURRENT_JOBS) {
+        const next = [...jobsById.values()].find(j => j.status === 'queued');
+        if (!next) break;
+        // 'queued' 상태에서 즉시 'uploading'으로 전환되지 않으면 같은 작업이 다시 잡힘
+        next.status = 'uploading';
+        startJob(next).catch(err => console.error(`Job ${next.id} 실패:`, err));
+    }
+}
 
-    // 폼에서 파일만 초기화 (다른 입력은 유지 — 동일 프로젝트 연속 업로드 편의)
-    selectedFile = null;
-    audioDuration = 0;
-    if (fileInput) fileInput.value = '';
-    if (uploadArea) uploadArea.style.display = 'block';
-    if (fileInfo) fileInfo.style.display = 'none';
-    if (convertBtn) convertBtn.disabled = true;
-
-    // 작업 시작 (비차단)
-    startJob(job).catch(err => {
-        console.error(`Job ${job.id} 실패:`, err);
-    });
+function getActiveRunningCount() {
+    return [...jobsById.values()].filter(j =>
+        ['uploading', 'stt', 'summarizing'].includes(j.status)
+    ).length;
 }
 
 async function startJob(job) {
@@ -1669,6 +1770,8 @@ async function startJob(job) {
         updateJobCard(job, { status: '실패', state: 'failed', error: job.error });
     } finally {
         refreshJobQueueCount();
+        // 슬롯이 비었으니 큐에 대기 중인 다음 작업을 시작
+        runJobQueue();
     }
 }
 
@@ -1678,7 +1781,10 @@ function jobUploadAndSTT(job) {
         job.xhr = xhr;
         job.status = 'uploading';
         job.stage = 'upload';
-        updateJobCard(job, { status: '업로드 시작...', pct: 0, state: 'running', stage: 'upload' });
+        const initStatus = job.mergeMode
+            ? `업로드 시작... (${job.files.length}개 파트)`
+            : '업로드 시작...';
+        updateJobCard(job, { status: initStatus, pct: 0, state: 'running', stage: 'upload' });
 
         xhr.upload.addEventListener('progress', (e) => {
             if (!e.lengthComputable) return;
@@ -1689,15 +1795,18 @@ function jobUploadAndSTT(job) {
         xhr.upload.addEventListener('load', () => {
             job.status = 'stt';
             job.stage = 'stt';
-            updateJobCard(job, { status: '음성→텍스트 변환 중...', pct: 50, state: 'running', stage: 'stt', stageDone: 'upload' });
+            const sttLabel = job.mergeMode
+                ? `음성→텍스트 변환 중... (${job.files.length}개 순차)`
+                : '음성→텍스트 변환 중...';
+            updateJobCard(job, { status: sttLabel, pct: 50, state: 'running', stage: 'stt', stageDone: 'upload' });
 
-            // STT 진행률을 50%→90% 사이에서 추정
-            const estMs = job.audioDuration > 0
-                ? job.audioDuration * ESTIMATION.stt_ratio * 1000
-                : (job.file.size / (1024 * 1024)) * 4000;
+            // STT 진행률 50%→90%. 합치기 모드는 총 길이 기준이라 자연스럽게 길어짐.
+            const estMs = job.totalDuration > 0
+                ? job.totalDuration * ESTIMATION.stt_ratio * 1000
+                : (job.totalSize / (1024 * 1024)) * 4000;
             const sttProgress = new RealisticProgress(Math.max(estMs, 3000), (pct) => {
-                const mapped = 50 + (pct / 100) * 40; // 50~90%
-                updateJobCard(job, { status: '음성→텍스트 변환 중...', pct: mapped, state: 'running', stage: 'stt' });
+                const mapped = 50 + (pct / 100) * 40;
+                updateJobCard(job, { status: sttLabel, pct: mapped, state: 'running', stage: 'stt' });
             });
             sttProgress.start();
             job.sttProgress = sttProgress;
@@ -1717,7 +1826,6 @@ function jobUploadAndSTT(job) {
                     const errorData = JSON.parse(xhr.responseText);
                     errorMsg = errorData.detail || errorMsg;
                 } catch {}
-                // 서버 측 동시성 캡 초과
                 if (xhr.status === 429) {
                     errorMsg = errorMsg || '동시 처리 한도 초과';
                 }
@@ -1735,23 +1843,33 @@ function jobUploadAndSTT(job) {
             reject(new Error('취소됨'));
         });
 
-        // FormData 빌드
         const formData = new FormData();
-        formData.append('file', job.file);
-        formData.append('whisper_model', 'base');
-        formData.append('audio_duration', job.audioDuration);
-        formData.append('file_size', job.file.size);
+
+        if (job.mergeMode) {
+            // /transcribe-merge: files[] 다중 + 길이/크기 쉼표 구분
+            job.files.forEach(f => formData.append('files', f));
+            formData.append('audio_durations', job.durations.map(d => d || 0).join(','));
+            formData.append('file_sizes', job.files.map(f => f.size).join(','));
+        } else {
+            // 단일 파일: 기존 /transcribe-only
+            formData.append('file', job.files[0]);
+            formData.append('whisper_model', 'base');
+            formData.append('audio_duration', job.durations[0] || 0);
+            formData.append('file_size', job.files[0].size);
+        }
+
         if (job.options.projectId) {
             formData.append('project_id', job.options.projectId);
         } else if (job.options.projectName) {
             formData.append('project_name', job.options.projectName);
-        } else {
+        } else if (!job.mergeMode) {
             formData.append('project_name', '');
         }
         formData.append('meeting_title', job.options.meetingTitle);
         formData.append('attendees', job.options.attendees);
 
-        xhr.open('POST', `${API_BASE_URL}/transcribe-only`);
+        const endpoint = job.mergeMode ? '/transcribe-merge' : '/transcribe-only';
+        xhr.open('POST', `${API_BASE_URL}${endpoint}`);
         if (accessToken) xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
         xhr.send(formData);
     });
@@ -1819,7 +1937,12 @@ function renderJobCard(job) {
 
     const node = tpl.content.firstElementChild.cloneNode(true);
     node.dataset.jobId = job.id;
-    node.querySelector('.job-card-filename').textContent = job.file.name;
+    node.querySelector('.job-card-filename').textContent = job.displayName;
+
+    // 'queued' 초기 상태일 때 친절한 메시지 표시 (슬롯 비면 자동 시작)
+    if (job.status === 'queued') {
+        node.querySelector('.job-card-status').textContent = '대기 중 — 슬롯이 비면 자동으로 시작됩니다';
+    }
 
     node.querySelector('[data-action="cancel"]').addEventListener('click', () => cancelJob(job));
     node.querySelector('[data-action="view"]').addEventListener('click', () => viewJobResult(job));
@@ -1896,6 +2019,12 @@ function cancelJob(job) {
         return;
     }
 
+    // 'queued' 상태에서 취소: 그냥 카드 제거 (아직 슬롯 점유 안 함)
+    if (job.status === 'queued') {
+        removeJobCard(job);
+        return;
+    }
+
     job.status = 'canceled';
     if (job.xhr) {
         try { job.xhr.abort(); } catch {}
@@ -1904,6 +2033,8 @@ function cancelJob(job) {
     if (job.summaryProgress) job.summaryProgress.stop();
     updateJobCard(job, { status: '취소됨', state: 'canceled', error: null });
     refreshJobQueueCount();
+    // 슬롯이 비었으니 대기 중인 다음 작업 시작
+    runJobQueue();
 }
 
 function removeJobCard(job) {
@@ -1926,9 +2057,9 @@ async function viewJobResult(job) {
     resultData = {
         transcriptId: job.transcriptId,
         transcript: job.transcript,
-        filename: job.file.name,
-        fileSize: job.file.size,
-        audioDuration: job.audioDuration,
+        filename: job.displayName,
+        fileSize: job.totalSize,
+        audioDuration: job.totalDuration,
         timestamp: job.timestamp,
         summary: job.summary,
         summaryId: job.summaryId,
@@ -1955,7 +2086,7 @@ async function viewJobResult(job) {
 
 // 토스트 대용 — 일단 alert
 function showJobToast(job, message) {
-    alert(`[${job.file.name}] ${message}`);
+    alert(`[${job.displayName}] ${message}`);
 }
 
 // 결과 표시
@@ -2137,10 +2268,10 @@ async function sendEmail() {
 
 // 리셋 — 결과 화면을 닫고 업로드 영역으로 돌아감. 진행 중인 작업 카드는 유지.
 function reset() {
-    selectedFile = null;
+    selectedFiles = [];
+    audioDurations = [];
     transcriptData = null;
     resultData = null;
-    audioDuration = 0;
     if (fileInput) fileInput.value = '';
 
     // 버전 상태 초기화
