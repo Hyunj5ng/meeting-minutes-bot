@@ -22,7 +22,7 @@ from core.serializers import serialize_summary_for_list
 from core.storage import upload_file_to_s3
 from core.usage import calculate_llm_cost
 from database import get_db
-from email_service import send_summary_email
+from email_service import send_summary_email, send_summary_email_background
 from models import User
 
 router = APIRouter(tags=["summaries"])
@@ -161,6 +161,16 @@ async def summarize_transcript(
                 meeting_date=transcript_record.created_at.strftime("%Y-%m-%d") if transcript_record.created_at else None,
             )
 
+        # 완료 자동 이메일 알림 (백그라운드, 실패 무시) — "수정하러 가기" 딥링크 포함
+        email_title = transcript_record.meeting_title or transcript_record.filename
+        background_tasks.add_task(
+            send_summary_email_background,
+            to_email=current_user.email,
+            subject=f"[Summarying!] 회의록 완성 — {email_title}",
+            summary_text=summary,
+            summary_id=summary_record.id,
+        )
+
         # 파일 저장 또는 응답 준비
         summary_path = os.path.join(OUTPUT_DIR, f"meeting_minutes_{timestamp}_{unique_id}.txt")
         summary_url = None
@@ -273,17 +283,19 @@ async def get_summaries(
     skip: int = 0,
     limit: int = 20,
     q: str = "",
+    days: int = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """사용자의 모든 요약 레코드 조회 (페이지네이션 + 검색).
+    """사용자의 모든 요약 레코드 조회 (페이지네이션 + 검색 + 기간 필터).
     q 파라미터가 있으면 파일명/회의제목/프로젝트명/요약본문에서 검색한다.
+    days 지정 시 최근 N일 내 생성분만 (처리 내역 피드용).
     total은 필터 조건에 맞는 전체 건수 (페이지네이션 UI용)."""
     if q and q.strip():
         records = crud.search_summary_records(db, current_user.id, q.strip(), skip=skip, limit=limit)
     else:
-        records = crud.get_all_summary_records(db, current_user.id, skip=skip, limit=limit)
-    total = crud.count_summary_records(db, current_user.id, keyword=q)
+        records = crud.get_all_summary_records(db, current_user.id, skip=skip, limit=limit, days=days)
+    total = crud.count_summary_records(db, current_user.id, keyword=q, days=None if (q and q.strip()) else days)
     return {
         "success": True,
         "count": len(records),
@@ -484,7 +496,7 @@ async def send_email(
     subject = f"[Summarying!] {title}"
 
     try:
-        await send_summary_email(current_user.email, subject, record.summary)
+        await send_summary_email(current_user.email, subject, record.summary, summary_id=record.id)
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:

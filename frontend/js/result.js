@@ -104,24 +104,14 @@ async function deleteCurrentSummary() {
     }
 }
 
-// 탭 전환
+// 탭 전환 (상세 페이지 회의록/원본 — 다른 화면의 탭과 간섭하지 않도록 스코프 한정)
 function switchTab(tabName) {
-    const tabs = document.querySelectorAll('.tab');
-    tabs.forEach(tab => {
-        if (tab.dataset.tab === tabName) {
-            tab.classList.add('active');
-        } else {
-            tab.classList.remove('active');
-        }
+    document.querySelectorAll('#detailView .tab[data-tab]').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.tab === tabName);
     });
-
-    const contents = document.querySelectorAll('.tab-content');
-    contents.forEach(content => {
-        if (content.id === tabName + 'Content') {
-            content.classList.add('active');
-        } else {
-            content.classList.remove('active');
-        }
+    ['summaryContent', 'transcriptContent'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('active', id === tabName + 'Content');
     });
 }
 

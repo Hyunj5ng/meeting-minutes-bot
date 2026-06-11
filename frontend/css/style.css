@@ -253,16 +253,25 @@ button {
 }
 
 .view-nav-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
     background: transparent;
     color: var(--text-muted);
     border: none;
-    padding: 0.45rem 0.85rem;
+    padding: 0.45rem 0.8rem;
     border-radius: var(--radius-sm);
     font-size: 0.875rem;
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
     transition: all 0.15s ease;
+}
+
+.view-nav-btn svg {
+    width: 17px;
+    height: 17px;
+    flex-shrink: 0;
 }
 
 .view-nav-btn:hover {
@@ -675,11 +684,20 @@ button {
     background: var(--danger-bg);
 }
 
-/* 파일 카드 내 회의 정보 입력 */
+/* 파일 카드 내 회의 정보 입력 (제목 / 참석자 / 프로젝트) */
 .file-info-item-meta-inputs {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr;
     gap: 0.5rem;
+}
+
+.file-info-item-meta-field select.select-input {
+    padding: 0.45rem 0.7rem;
+    font-size: 0.875rem;
+}
+
+.file-info-item-meta-field .js-file-new-project {
+    margin-top: 0.25rem;
 }
 
 .file-info-item-meta-field {
@@ -806,20 +824,19 @@ button {
     margin-top: 0.4rem;
 }
 
-/* 이메일 발송 옵션 */
-.email-option {
+/* 자동 이메일 안내 */
+.email-auto-note {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
     margin-top: 1rem;
-    padding: 0.75rem 0.875rem;
-    background: var(--surface);
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border);
+    font-size: 0.8125rem;
+    color: var(--text-muted);
 }
 
-.email-option-hint {
-    margin-top: 0.25rem;
-    margin-left: 1.55rem;
-    font-size: 0.75rem;
-    color: var(--text-muted);
+.email-auto-note svg {
+    color: var(--brand-600);
+    flex-shrink: 0;
 }
 
 /* ============================================
@@ -2187,6 +2204,127 @@ button {
     .stats-grid {
         grid-template-columns: repeat(2, 1fr);
     }
+}
+
+/* ============================================
+   처리 내역 피드 (메시지함 스타일)
+   ============================================ */
+.activity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.activity-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.7rem 0.875rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.activity-item:hover {
+    border-color: var(--brand-500);
+    box-shadow: var(--shadow-sm);
+}
+
+.activity-item.is-unread {
+    border-left: 3px solid var(--brand-500);
+    background: var(--brand-50);
+}
+
+.activity-item-main {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 0;
+}
+
+.activity-item-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-strong);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.activity-item.is-unread .activity-item-title {
+    font-weight: 700;
+}
+
+.activity-item-time {
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.activity-sentinel {
+    height: 1px;
+}
+
+/* ============================================
+   컨텍스트 허브
+   ============================================ */
+.context-pane-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.context-pane-toolbar .dashboard-status {
+    padding: 0;
+}
+
+.legacy-names {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--border-strong);
+}
+
+.legacy-names-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+}
+
+.legacy-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.35rem 0.75rem;
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    border-radius: 999px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #92400E;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.legacy-chip:hover {
+    border-color: var(--warning);
+    box-shadow: var(--shadow-sm);
+}
+
+.legacy-chip-count {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    background: var(--surface);
+    border-radius: 999px;
+    padding: 0.05rem 0.45rem;
+    color: var(--text-muted);
 }
 
 /* ============================================

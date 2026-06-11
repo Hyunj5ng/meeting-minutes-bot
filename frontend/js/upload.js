@@ -53,7 +53,7 @@ async function handleFiles(fileList) {
     for (const f of valid) {
         if (!existingKeys.has(keyOf(f))) {
             selectedFiles.push(f);
-            fileMetas.push({ meetingTitle: '', attendees: '' });
+            fileMetas.push({ meetingTitle: '', attendees: '', projectId: '', newProjectName: '' });
             existingKeys.add(keyOf(f));
         }
     }
@@ -112,7 +112,7 @@ function renderFileList() {
         const sizeText = dur > 0
             ? `${formatFileSize(file.size)} · ${Math.floor(dur / 60)}분 ${Math.round(dur % 60)}초`
             : formatFileSize(file.size);
-        const meta = fileMetas[idx] || { meetingTitle: '', attendees: '' };
+        const meta = fileMetas[idx] || { meetingTitle: '', attendees: '', projectId: '', newProjectName: '' };
 
         li.innerHTML = `
             <div class="file-info-item-row">
@@ -137,8 +137,13 @@ function renderFileList() {
                     <input type="text" class="text-input js-file-attendees" placeholder="홍길동, 김철수" autocomplete="off">
                     <div class="attendee-suggestions" hidden></div>
                 </div>
+                <div class="file-info-item-meta-field">
+                    <label>프로젝트</label>
+                    <select class="select-input js-file-project"></select>
+                    <input type="text" class="text-input js-file-new-project" placeholder="새 프로젝트 이름" style="display: none;">
+                </div>
             </div>
-            <p class="merge-secondary-notice">합치기 모드 — 첫 번째 파일의 회의 정보가 사용됩니다</p>
+            <p class="merge-secondary-notice">합치기 모드 — 첫 번째 파일의 회의 정보·프로젝트가 사용됩니다</p>
         `;
         li.querySelector('.file-info-item-name').textContent = file.name;
         li.querySelector('.file-info-item-size').textContent = sizeText;
@@ -158,6 +163,25 @@ function renderFileList() {
         const chipsEl = li.querySelector('.attendee-suggestions');
         bindAttendeeAutocomplete(attInput, chipsEl);
 
+        // 프로젝트 선택 (파일마다 다른 프로젝트 가능)
+        const projSelect = li.querySelector('.js-file-project');
+        const newProjInput = li.querySelector('.js-file-new-project');
+        fillFileProjectOptions(projSelect, meta.projectId);
+        newProjInput.value = meta.newProjectName || '';
+        newProjInput.style.display = meta.projectId === '__new__' ? 'block' : 'none';
+        projSelect.addEventListener('change', (e) => {
+            if (fileMetas[idx]) fileMetas[idx].projectId = e.target.value;
+            const isNew = e.target.value === '__new__';
+            newProjInput.style.display = isNew ? 'block' : 'none';
+            if (isNew) newProjInput.focus();
+            // 프로젝트가 바뀌면 참석자 추천 캐시 무효화
+            attendeeSuggestionCache = [];
+            attendeeSuggestionProjectId = undefined;
+        });
+        newProjInput.addEventListener('input', (e) => {
+            if (fileMetas[idx]) fileMetas[idx].newProjectName = e.target.value;
+        });
+
         itemsEl.appendChild(li);
     });
 
@@ -167,6 +191,27 @@ function renderFileList() {
         if (parent) parent.style.display = selectedFiles.length >= 2 ? 'grid' : 'none';
         if (selectedFiles.length < 2) mergeToggle.checked = false;
     }
+}
+
+// 파일 카드의 프로젝트 select 옵션 채우기 (projectsCache 기반)
+function fillFileProjectOptions(select, selectedValue) {
+    if (!select) return;
+    select.innerHTML = '';
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = '— 프로젝트 없음 —';
+    select.appendChild(noneOpt);
+    (projectsCache || []).forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = String(p.id);
+        opt.textContent = p.name;
+        select.appendChild(opt);
+    });
+    const newOpt = document.createElement('option');
+    newOpt.value = '__new__';
+    newOpt.textContent = '+ 새 프로젝트 만들기...';
+    select.appendChild(newOpt);
+    select.value = selectedValue || '';
 }
 
 function removeFileAt(idx) {
@@ -206,16 +251,6 @@ const ATTENDEE_CHIP_LIMIT = 8;
 let activeAttendeeInput = null;
 
 function initAttendeeAutocomplete() {
-    // 프로젝트 변경 시 캐시 무효화 + 활성 input에 대해 재렌더
-    const projectSelect = document.getElementById('projectSelect');
-    if (projectSelect) {
-        projectSelect.addEventListener('change', () => {
-            attendeeSuggestionCache = [];
-            attendeeSuggestionProjectId = null;
-            loadRecentAttendees().then(() => renderAttendeeChips(activeAttendeeInput));
-        });
-    }
-
     // 페이지 진입 직후 한 번 미리 로드 (캐시 워밍)
     loadRecentAttendees();
 }
@@ -241,7 +276,8 @@ function bindAttendeeAutocomplete(input, container) {
 }
 
 function getCurrentProjectIdForAttendees() {
-    const sel = document.getElementById('projectSelect');
+    // 포커스된 참석자 입력이 속한 파일 카드의 프로젝트 기준
+    const sel = activeAttendeeInput?.closest('.file-info-item')?.querySelector('.js-file-project');
     if (!sel) return null;
     const val = sel.value;
     if (!val || val === '__new__') return null;

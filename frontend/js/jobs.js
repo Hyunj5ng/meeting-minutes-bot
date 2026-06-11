@@ -24,34 +24,34 @@ function getActiveJobCount() {
 async function handleConvert() {
     if (!selectedFiles.length) return;
 
-    // 프로젝트 + AI 모델은 모든 파일 공통
-    const projectSelectEl = document.getElementById('projectSelect');
-    const projectNameInput = document.getElementById('projectName');
-    const selectedProjectVal = projectSelectEl ? projectSelectEl.value : '';
+    // AI 모델만 공통 — 프로젝트는 파일마다 선택 (하루에 여러 프로젝트 회의 가능)
     const gptSelect = document.getElementById('gptModelUpload');
     const mergeMode = !!(document.getElementById('mergeFilesCheckbox')?.checked) && selectedFiles.length >= 2;
 
     const commonOptions = {
-        projectId: (selectedProjectVal && selectedProjectVal !== '__new__') ? selectedProjectVal : null,
-        projectName: (selectedProjectVal === '__new__' && projectNameInput) ? projectNameInput.value.trim() : '',
         gptModel: gptSelect.value,
         gptModelName: gptSelect.options[gptSelect.selectedIndex].text.split(' - ')[0],
-        autoEmail: document.getElementById('autoEmailCheckbox')?.checked || false,
     };
 
+    // 파일 메타 → 작업 옵션 (프로젝트: 기존 선택이면 id, 새로 만들기면 이름)
+    const metaToOptions = (meta) => ({
+        meetingTitle: meta.meetingTitle || '',
+        attendees: meta.attendees || '',
+        projectId: (meta.projectId && meta.projectId !== '__new__') ? meta.projectId : null,
+        projectName: meta.projectId === '__new__' ? (meta.newProjectName || '').trim() : '',
+    });
+
     if (mergeMode) {
-        // 합치기 모드: 1개 job, 첫 번째 파일의 메타 사용
-        const primaryMeta = fileMetas[0] || { meetingTitle: '', attendees: '' };
-        const jobOptions = { ...commonOptions, meetingTitle: primaryMeta.meetingTitle, attendees: primaryMeta.attendees };
-        const job = makeJob([...selectedFiles], [...audioDurations], jobOptions, true);
+        // 합치기 모드: 1개 job, 첫 번째 파일의 메타·프로젝트 사용
+        const primaryMeta = fileMetas[0] || {};
+        const job = makeJob([...selectedFiles], [...audioDurations], { ...commonOptions, ...metaToOptions(primaryMeta) }, true);
         jobsById.set(job.id, job);
         renderJobCard(job);
     } else {
-        // 일반 모드: 파일마다 별도 job + 각자의 meta
+        // 일반 모드: 파일마다 별도 job + 각자의 메타·프로젝트
         selectedFiles.forEach((f, i) => {
-            const meta = fileMetas[i] || { meetingTitle: '', attendees: '' };
-            const jobOptions = { ...commonOptions, meetingTitle: meta.meetingTitle, attendees: meta.attendees };
-            const job = makeJob([f], [audioDurations[i] || 0], jobOptions, false);
+            const meta = fileMetas[i] || {};
+            const job = makeJob([f], [audioDurations[i] || 0], { ...commonOptions, ...metaToOptions(meta) }, false);
             jobsById.set(job.id, job);
             renderJobCard(job);
         });
@@ -125,25 +125,10 @@ async function startJob(job) {
 
         job.status = 'done';
         job.progress = 100;
-        updateJobCard(job, { status: '회의록 생성 완료!', pct: 100, state: 'done', stage: 'summarize', stageDone: true });
+        updateJobCard(job, { status: '회의록 생성 완료! 이메일로도 보내드렸어요.', pct: 100, state: 'done', stage: 'summarize', stageDone: true });
         fetchUsageInfo();
         announceJobDone(job);
-
-        // 자동 이메일 발송 (옵션 켜진 경우)
-        if (job.options.autoEmail && job.summaryId) {
-            try {
-                const emailRes = await authFetch(`${API_BASE_URL}/summaries/${job.summaryId}/send-email`, { method: 'POST' });
-                if (emailRes.ok) {
-                    const emailData = await emailRes.json();
-                    showJobToast(job, emailData.message);
-                } else {
-                    const emailError = await emailRes.json();
-                    showJobToast(job, '이메일 발송 실패: ' + (emailError.detail || '알 수 없는 오류'));
-                }
-            } catch (emailErr) {
-                console.error('Auto email error:', emailErr);
-            }
-        }
+        // 이메일은 서버가 자동 발송 (수정하러 가기 딥링크 포함)
     } catch (error) {
         if (job.status === 'canceled') return;
         job.status = 'failed';
@@ -385,10 +370,8 @@ function refreshJobQueueCount() {
     const countEl = document.getElementById('jobQueueCount');
     if (countEl) countEl.textContent = String(active);
 
-    // 네비 "처리 중" 버튼: 카드가 하나라도 있으면 노출 + 활성 작업 수 배지
-    const navBtn = document.getElementById('navProcessing');
+    // 네비 "처리 내역" 배지: 활성 작업 수 (없으면 숨김)
     const badge = document.getElementById('navProcessingBadge');
-    if (navBtn) navBtn.hidden = jobsById.size === 0;
     if (badge) {
         badge.textContent = String(active);
         badge.hidden = active === 0;
@@ -432,14 +415,18 @@ function removeJobCard(job) {
     refreshJobQueueCount();
 }
 
-// 작업 완료 알림: 회의록은 "내 회의록" 리스트에 읽지 않음으로 쌓인다
+// 작업 완료 알림: 회의록은 리스트에 읽지 않음으로 쌓이고, 이메일도 자동 발송됨
 function announceJobDone(job) {
-    showToast(`"${job.displayName}" 회의록이 완성됐어요. 내 회의록에 쌓아뒀습니다.`, {
+    showToast(`"${job.displayName}" 회의록이 완성됐어요. 이메일로도 보내드렸습니다.`, {
         type: 'success',
         duration: 10000,
         actionLabel: '바로 보기',
         onAction: () => viewJobResult(job),
     });
+    // 처리 내역 화면을 보고 있으면 피드 갱신
+    if (currentView === 'processing' && typeof resetActivityFeed === 'function') {
+        resetActivityFeed();
+    }
 }
 
 // 완료된 작업의 회의록 열기 — 상세/편집 페이지로 (서버 조회로 읽음 처리까지)

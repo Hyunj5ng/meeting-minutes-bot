@@ -198,4 +198,7 @@ function showMainApp() {
     initDomElements();
     setupEventListeners();
     fetchUsageInfo();
+
+    // 이메일 "수정하러 가기" 딥링크 (#summary/{id}) 처리
+    handleHashDeepLink();
 }

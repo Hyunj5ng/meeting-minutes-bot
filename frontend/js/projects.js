@@ -47,6 +47,73 @@ async function loadProjects() {
         console.error(err);
         statusEl.textContent = '프로젝트 목록을 불러오지 못했습니다: ' + err.message;
     }
+
+    // 분류 대기 (자유 입력 이름 + 미분류) 현황
+    loadLegacyProjectNames();
+}
+
+// 분류 대기 현황: 자유 텍스트 이름만 적힌 회의록 + 완전 미분류
+async function loadLegacyProjectNames() {
+    const section = document.getElementById('legacyNamesSection');
+    const listEl = document.getElementById('legacyNamesList');
+    const unclassifiedEl = document.getElementById('unclassifiedInfo');
+    if (!section || !listEl) return;
+
+    try {
+        const res = await authFetch(`${API_BASE_URL}/projects/legacy-names`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const names = data.legacy_names || [];
+        const unclassified = data.unclassified_count || 0;
+
+        listEl.innerHTML = '';
+        if (!names.length && unclassified === 0) {
+            section.hidden = true;
+            return;
+        }
+        section.hidden = false;
+
+        names.forEach(({ name, count }) => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'legacy-chip';
+            chip.innerHTML = `<span class="legacy-chip-name"></span><span class="legacy-chip-count">${count}건</span>`;
+            chip.querySelector('.legacy-chip-name').textContent = name;
+            chip.title = `"${name}" 회의록을 내 회의록에서 검색`;
+            chip.addEventListener('click', () => {
+                dashboardQuery = name;
+                dashboardPage = 1;
+                const input = document.getElementById('dashboardSearch');
+                if (input) input.value = name;
+                switchView('dashboard');
+            });
+            listEl.appendChild(chip);
+        });
+
+        if (unclassifiedEl) {
+            unclassifiedEl.hidden = unclassified === 0;
+            unclassifiedEl.textContent = `이름조차 없는 미분류 회의록도 ${unclassified}건 있어요. 내 회의록에서 열어 분류해주세요.`;
+        }
+    } catch (err) {
+        console.warn('분류 대기 현황 로드 실패:', err);
+    }
+}
+
+// 프로젝트 캐시 갱신 (파일 카드의 프로젝트 셀렉트 옵션용)
+async function refreshProjectsCache() {
+    try {
+        const res = await authFetch(`${API_BASE_URL}/projects`);
+        if (!res.ok) return projectsCache;
+        const data = await res.json();
+        projectsCache = data.projects || [];
+        // 파일이 선택돼 있으면 카드의 프로젝트 옵션도 갱신
+        if (selectedFiles.length > 0 && typeof renderFileList === 'function') {
+            renderFileList();
+        }
+        return projectsCache;
+    } catch {
+        return projectsCache;
+    }
 }
 
 async function openProjectDetail(projectId) {
@@ -237,8 +304,8 @@ async function saveProjectModal() {
             await openProjectDetail(projectModalTargetId);
         } else {
             await loadProjects();
-            // 새로 만든 프로젝트는 생성 폼 드롭다운에도 즉시 반영
-            await populateProjectSelect(data.project.id);
+            // 새로 만든 프로젝트를 파일 카드의 프로젝트 셀렉트에도 즉시 반영
+            await refreshProjectsCache();
         }
     } catch (err) {
         console.error(err);
@@ -254,66 +321,11 @@ async function deleteCurrentProject() {
         const res = await authFetch(`${API_BASE_URL}/projects/${p.id}`, { method: 'DELETE' });
         if (!res.ok) throw new Error('삭제 실패');
         currentProjectDetail = null;
-        switchView('projects');
+        refreshProjectsCache();
+        switchView('context');
     } catch (err) {
         console.error(err);
         showToast('삭제 중 오류: ' + err.message, { type: 'error' });
-    }
-}
-
-// ============================================
-// 생성 폼: 프로젝트 드롭다운
-// ============================================
-
-async function populateProjectSelect(selectedId = null) {
-    const select = document.getElementById('projectSelect');
-    if (!select) return;
-
-    try {
-        const res = await authFetch(`${API_BASE_URL}/projects`);
-        if (!res.ok) return;
-        const data = await res.json();
-        const projects = data.projects || [];
-        projectsCache = projects;
-
-        // 기존 옵션 비우고 다시 채움
-        select.innerHTML = '';
-        const noneOpt = document.createElement('option');
-        noneOpt.value = '';
-        noneOpt.textContent = '— 프로젝트 없음 —';
-        select.appendChild(noneOpt);
-
-        projects.forEach(p => {
-            const opt = document.createElement('option');
-            opt.value = String(p.id);
-            opt.textContent = p.name;
-            select.appendChild(opt);
-        });
-
-        const newOpt = document.createElement('option');
-        newOpt.value = '__new__';
-        newOpt.textContent = '+ 새 프로젝트 만들기...';
-        select.appendChild(newOpt);
-
-        if (selectedId) {
-            select.value = String(selectedId);
-        }
-    } catch (err) {
-        console.warn('프로젝트 옵션 로드 실패:', err);
-    }
-}
-
-function onProjectSelectChange() {
-    const select = document.getElementById('projectSelect');
-    const newInput = document.getElementById('projectName');
-    if (!select || !newInput) return;
-
-    if (select.value === '__new__') {
-        newInput.style.display = 'block';
-        newInput.focus();
-    } else {
-        newInput.style.display = 'none';
-        newInput.value = '';
     }
 }
 

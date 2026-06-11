@@ -339,22 +339,31 @@ def get_summaries_by_transcript(
     ).order_by(SummaryRecord.created_at.desc()).all()
 
 
+def _recent_cutoff(days: int):
+    from datetime import timedelta
+    return datetime.now(timezone.utc) - timedelta(days=days)
+
+
 def get_all_summary_records(
     db: Session,
     user_id: int,
     skip: int = 0,
-    limit: int = 100
+    limit: int = 100,
+    days: Optional[int] = None,
 ) -> List[SummaryRecord]:
-    """사용자의 모든 요약 레코드 조회 (페이지네이션)"""
-    return db.query(SummaryRecord).join(TranscriptRecord).filter(
+    """사용자의 모든 요약 레코드 조회 (페이지네이션). days 지정 시 최근 N일만."""
+    q = db.query(SummaryRecord).join(TranscriptRecord).filter(
         TranscriptRecord.user_id == user_id,
-    ).order_by(
+    )
+    if days is not None and days > 0:
+        q = q.filter(SummaryRecord.created_at >= _recent_cutoff(days))
+    return q.order_by(
         SummaryRecord.created_at.desc()
     ).offset(skip).limit(limit).all()
 
 
-def count_summary_records(db: Session, user_id: int, keyword: str = "") -> int:
-    """사용자의 요약 레코드 총 건수 (검색어 있으면 동일 조건으로 카운트)"""
+def count_summary_records(db: Session, user_id: int, keyword: str = "", days: Optional[int] = None) -> int:
+    """사용자의 요약 레코드 총 건수 (검색어/기간 필터 동일 조건으로 카운트)"""
     q = db.query(sa_func.count(SummaryRecord.id)).join(TranscriptRecord).filter(
         TranscriptRecord.user_id == user_id,
     )
@@ -366,7 +375,39 @@ def count_summary_records(db: Session, user_id: int, keyword: str = "") -> int:
             (TranscriptRecord.meeting_title.ilike(pattern)) |
             (TranscriptRecord.project_name.ilike(pattern))
         )
+    if days is not None and days > 0:
+        q = q.filter(SummaryRecord.created_at >= _recent_cutoff(days))
     return q.scalar() or 0
+
+
+def get_legacy_project_names(db: Session, user_id: int) -> dict:
+    """프로젝트 분류 현황 집계:
+    - legacy_names: project_id 없이 자유 텍스트 이름만 적힌 회의록들의 이름별 건수
+      (projects 테이블 도입 전 초기 데이터 — 같은 프로젝트가 다른 표기로 흩어져 있을 수 있음)
+    - unclassified_count: 이름도 프로젝트도 없는 회의록 수
+    """
+    legacy_rows = db.query(
+        TranscriptRecord.project_name,
+        sa_func.count(SummaryRecord.id),
+    ).join(
+        SummaryRecord, SummaryRecord.transcript_id == TranscriptRecord.id
+    ).filter(
+        TranscriptRecord.user_id == user_id,
+        TranscriptRecord.project_id.is_(None),
+        TranscriptRecord.project_name.isnot(None),
+        TranscriptRecord.project_name != "",
+    ).group_by(TranscriptRecord.project_name).order_by(sa_func.count(SummaryRecord.id).desc()).all()
+
+    unclassified = db.query(sa_func.count(SummaryRecord.id)).join(TranscriptRecord).filter(
+        TranscriptRecord.user_id == user_id,
+        TranscriptRecord.project_id.is_(None),
+        ((TranscriptRecord.project_name.is_(None)) | (TranscriptRecord.project_name == "")),
+    ).scalar() or 0
+
+    return {
+        "legacy_names": [{"name": name, "count": int(cnt)} for name, cnt in legacy_rows],
+        "unclassified_count": int(unclassified),
+    }
 
 
 def mark_summary_viewed(db: Session, record: SummaryRecord) -> None:

@@ -65,6 +65,19 @@ async def list_projects(
     }
 
 
+@router.get("/projects/legacy-names")
+async def get_legacy_project_names(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """프로젝트 분류 현황: 자유 텍스트 이름만 적힌 회의록(초기 데이터)과 완전 미분류 건수.
+
+    같은 프로젝트가 표기만 다르게 흩어져 있는 경우를 찾아 분류하는 용도.
+    내 회의록 검색창에 이 이름을 치면 해당 회의록만 모아볼 수 있다."""
+    result = crud.get_legacy_project_names(db, current_user.id)
+    return {"success": True, **result}
+
+
 @router.post("/projects")
 async def create_project(
     body: ProjectCreateRequest,

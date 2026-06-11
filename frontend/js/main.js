@@ -13,17 +13,15 @@ function switchView(view) {
         processing: document.getElementById('processingView'),
         dashboard: document.getElementById('dashboardView'),
         detail: document.getElementById('detailView'),
-        projects: document.getElementById('projectsView'),
+        context: document.getElementById('contextView'),
         projectDetail: document.getElementById('projectDetailView'),
-        personalContext: document.getElementById('personalContextView'),
         mypage: document.getElementById('myPageView'),
     };
     const navButtons = {
         create: document.getElementById('navCreate'),
         processing: document.getElementById('navProcessing'),
         dashboard: document.getElementById('navDashboard'),
-        projects: document.getElementById('navProjects'),
-        personalContext: document.getElementById('navPersonalContext'),
+        context: document.getElementById('navContext'),
         mypage: document.getElementById('navMyPage'),
     };
 
@@ -39,8 +37,8 @@ function switchView(view) {
     // 활성화
     if (views[view]) views[view].style.display = '';
     // 하위 페이지는 상위 네비를 켠 상태로 유지
-    if (view === 'projectDetail' && navButtons.projects) {
-        navButtons.projects.classList.add('active');
+    if (view === 'projectDetail' && navButtons.context) {
+        navButtons.context.classList.add('active');
     } else if (view === 'detail' && navButtons.dashboard) {
         navButtons.dashboard.classList.add('active');
     } else if (navButtons[view]) {
@@ -49,11 +47,34 @@ function switchView(view) {
 
     // 진입 시 자동 로드
     if (view === 'dashboard') loadDashboard(dashboardQuery, dashboardPage);
-    if (view === 'projects') loadProjects();
-    if (view === 'personalContext') loadPersonalContext();
+    if (view === 'processing') resetActivityFeed();
+    if (view === 'context') switchContextTab(currentContextTab);
     if (view === 'mypage') loadMyPage();
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// 컨텍스트 허브 하위 탭 (프로젝트 / 내 컨텍스트)
+function switchContextTab(name) {
+    currentContextTab = name;
+    document.querySelectorAll('[data-context-tab]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.contextTab === name);
+    });
+    document.getElementById('contextProjectsPane')?.classList.toggle('active', name === 'projects');
+    document.getElementById('contextPersonalPane')?.classList.toggle('active', name === 'personal');
+    if (name === 'projects') loadProjects();
+    else loadPersonalContext();
+}
+
+// 이메일 "수정하러 가기" 딥링크 (#summary/{id}) 처리
+function handleHashDeepLink() {
+    const m = (location.hash || '').match(/^#summary\/(\d+)$/);
+    if (!m) return;
+    const summaryId = parseInt(m[1], 10);
+    history.replaceState(null, '', location.pathname);
+    if (Number.isFinite(summaryId)) {
+        openSummaryFromDashboard(summaryId);
+    }
 }
 
 // ---- DOM 및 이벤트 초기화 ----
@@ -101,15 +122,18 @@ function setupEventListeners() {
     const navCreate = document.getElementById('navCreate');
     const navProcessing = document.getElementById('navProcessing');
     const navDashboard = document.getElementById('navDashboard');
-    const navProjects = document.getElementById('navProjects');
-    const navPersonalContext = document.getElementById('navPersonalContext');
+    const navContext = document.getElementById('navContext');
     const navMyPage = document.getElementById('navMyPage');
     if (navCreate) navCreate.addEventListener('click', () => switchView('create'));
     if (navProcessing) navProcessing.addEventListener('click', () => switchView('processing'));
     if (navDashboard) navDashboard.addEventListener('click', () => switchView('dashboard'));
-    if (navProjects) navProjects.addEventListener('click', () => switchView('projects'));
-    if (navPersonalContext) navPersonalContext.addEventListener('click', () => switchView('personalContext'));
+    if (navContext) navContext.addEventListener('click', () => switchView('context'));
     if (navMyPage) navMyPage.addEventListener('click', () => switchView('mypage'));
+
+    // 컨텍스트 허브 하위 탭
+    document.querySelectorAll('[data-context-tab]').forEach(btn => {
+        btn.addEventListener('click', () => switchContextTab(btn.dataset.contextTab));
+    });
 
     // 대시보드 검색 (300ms 디바운스, 검색 시 1페이지로)
     const dashboardSearchInput = document.getElementById('dashboardSearch');
@@ -153,7 +177,7 @@ function setupEventListeners() {
     const newProjectBtn = document.getElementById('newProjectBtn');
     if (newProjectBtn) newProjectBtn.addEventListener('click', () => openProjectModal('create'));
     const backToProjectsBtn = document.getElementById('backToProjectsBtn');
-    if (backToProjectsBtn) backToProjectsBtn.addEventListener('click', () => switchView('projects'));
+    if (backToProjectsBtn) backToProjectsBtn.addEventListener('click', () => switchView('context'));
     const editProjectBtn = document.getElementById('editProjectBtn');
     if (editProjectBtn) editProjectBtn.addEventListener('click', () => {
         if (currentProjectDetail) openProjectModal('edit', currentProjectDetail.project);
@@ -194,12 +218,8 @@ function setupEventListeners() {
         }
     });
 
-    // 회의 생성 폼: 프로젝트 드롭다운
-    const projectSelect = document.getElementById('projectSelect');
-    if (projectSelect) projectSelect.addEventListener('change', onProjectSelectChange);
-
-    // 초기 프로젝트 옵션 채우기
-    populateProjectSelect();
+    // 프로젝트 캐시 워밍 (파일 카드의 프로젝트 셀렉트용)
+    refreshProjectsCache();
 
     // 참석자 자동완성 (글로벌 트리거)
     initAttendeeAutocomplete();
