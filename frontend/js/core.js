@@ -58,7 +58,11 @@ let isDiffOpen = false;
 
 // 대시보드 상태
 let dashboardSearchTimer = null;
-let currentView = 'create';           // 'create' | 'dashboard' | 'projects' | 'projectDetail' | 'personalContext'
+let dashboardQuery = '';              // 현재 검색어
+let dashboardPage = 1;                // 현재 페이지 (1부터)
+let dashboardTotal = 0;               // 전체 건수 (서버 total)
+const DASHBOARD_PAGE_SIZE = 10;
+let currentView = 'create';           // 'create' | 'processing' | 'dashboard' | 'detail' | 'projects' | 'projectDetail' | 'personalContext' | 'mypage'
 
 // 프로젝트/컨텍스트 상태
 let projectsCache = [];               // [{id, name, description, summary_count, context_count, ...}]
@@ -75,7 +79,7 @@ let _refreshPromise = null;
 
 // DOM 요소 (로그인 후 main.js의 initDomElements에서 초기화)
 let uploadArea, fileInput;
-let convertBtn, resultSection, copyBtn, resetBtn;
+let convertBtn, resultSection, copyBtn;
 
 // ============================================
 // RealisticProgress 클래스

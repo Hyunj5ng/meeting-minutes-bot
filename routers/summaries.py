@@ -17,7 +17,7 @@ import project_memory
 from auth import get_current_user
 from core import services
 from core.config import OUTPUT_DIR
-from core.schemas import LLMModel, SummaryUpdateRequest
+from core.schemas import LLMModel, SummaryProjectUpdateRequest, SummaryUpdateRequest
 from core.serializers import serialize_summary_for_list
 from core.storage import upload_file_to_s3
 from core.usage import calculate_llm_cost
@@ -277,14 +277,19 @@ async def get_summaries(
     db: Session = Depends(get_db)
 ):
     """사용자의 모든 요약 레코드 조회 (페이지네이션 + 검색).
-    q 파라미터가 있으면 파일명/회의제목/프로젝트명/요약본문에서 검색한다."""
+    q 파라미터가 있으면 파일명/회의제목/프로젝트명/요약본문에서 검색한다.
+    total은 필터 조건에 맞는 전체 건수 (페이지네이션 UI용)."""
     if q and q.strip():
         records = crud.search_summary_records(db, current_user.id, q.strip(), skip=skip, limit=limit)
     else:
         records = crud.get_all_summary_records(db, current_user.id, skip=skip, limit=limit)
+    total = crud.count_summary_records(db, current_user.id, keyword=q)
     return {
         "success": True,
         "count": len(records),
+        "total": total,
+        "skip": skip,
+        "limit": limit,
         "records": [serialize_summary_for_list(r) for r in records],
     }
 
@@ -295,10 +300,11 @@ async def get_summary(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """특정 요약 레코드 조회 (소유권 확인)"""
+    """특정 요약 레코드 조회 (소유권 확인). 처음 열람 시 읽음 처리된다."""
     record = crud.get_summary_record(db, summary_id, current_user.id)
     if not record:
         raise HTTPException(status_code=404, detail="Summary 레코드를 찾을 수 없습니다")
+    crud.mark_summary_viewed(db, record)
     transcript = record.transcript
     return {
         "success": True,
@@ -311,8 +317,42 @@ async def get_summary(
             "transcript": transcript.transcript if transcript else None,
             "filename": transcript.filename if transcript else None,
             "meeting_title": transcript.meeting_title if transcript else None,
+            "project_id": transcript.project_id if transcript else None,
             "project_name": transcript.project_name if transcript else None,
         },
+    }
+
+
+@router.put("/summaries/{summary_id}/project")
+async def update_summary_project(
+    summary_id: int,
+    body: SummaryProjectUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """회의록의 프로젝트 분류 변경 (소유권 확인). project_id=null이면 해제.
+
+    과거 회의록을 나중에 프로젝트로 분류할 때 사용. 분류를 마친 뒤
+    프로젝트 상세 > AI 메모리 탭의 '전체 재구축'을 누르면 메모리에 반영된다."""
+    record = crud.set_summary_project(db, summary_id, current_user.id, body.project_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="회의록 또는 프로젝트를 찾을 수 없습니다")
+
+    transcript = record.transcript
+    # RAG 메타데이터 동기화 (프로젝트 우선 검색이 새 분류를 따르도록)
+    if services.rag_service:
+        metadata = {}
+        if transcript.meeting_title:
+            metadata["meeting_title"] = transcript.meeting_title
+        if transcript.project_name:
+            metadata["project_name"] = transcript.project_name
+        services.rag_service.update_summary_metadata(current_user.id, summary_id, metadata)
+
+    return {
+        "success": True,
+        "summary_id": record.id,
+        "project_id": transcript.project_id,
+        "project_name": transcript.project_name,
     }
 
 

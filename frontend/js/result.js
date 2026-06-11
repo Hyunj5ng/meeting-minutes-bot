@@ -1,35 +1,10 @@
 // ============================================
-// result.js — 결과 카드: 표시/탭/복사/편집/이메일/버전+diff/리셋
+// result.js — 회의록 상세/편집 페이지: 표시/탭/복사/편집/이메일/버전+diff/분류/삭제
 // ============================================
 
-// ---- Accordion (업로드 카드 접기/펼치기) ----
-
-function collapseUploadCard() {
-    const card = document.getElementById('uploadCard');
-    if (card) card.classList.add('collapsed');
-}
-
-function expandUploadCard() {
-    const card = document.getElementById('uploadCard');
-    if (card) card.classList.remove('collapsed');
-}
-
-function toggleUploadCard() {
-    const card = document.getElementById('uploadCard');
-    if (card) card.classList.toggle('collapsed');
-}
-
-// ---- 결과 표시 ----
-
-// 대시보드에서 결과를 열었을 때 "← 내 회의록" 백링크 표시 여부
-function setResultBackLink(visible) {
-    const btn = document.getElementById('backToListBtn');
-    if (btn) btn.hidden = !visible;
-}
+// ---- 상세 표시 ----
 
 function showResult(data) {
-    resultSection.style.display = 'block';
-
     // 마크다운 설정
     marked.setOptions({
         breaks: true,
@@ -44,7 +19,89 @@ function showResult(data) {
 
     document.getElementById('transcriptText').textContent = data.transcript;
 
-    resultSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // 직전 상세에서 열어둔 편집 모드/탭 상태 초기화
+    if (isEditMode) cancelEdit();
+    switchTab('summary');
+}
+
+// ---- 프로젝트 분류 (상세에서 변경) ----
+
+async function populateDetailProjectSelect(selectedProjectId) {
+    const select = document.getElementById('detailProjectSelect');
+    if (!select) return;
+
+    select.innerHTML = '';
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = '— 프로젝트 없음 —';
+    select.appendChild(noneOpt);
+
+    try {
+        const res = await authFetch(`${API_BASE_URL}/projects`);
+        if (res.ok) {
+            const data = await res.json();
+            (data.projects || []).forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = String(p.id);
+                opt.textContent = p.name;
+                select.appendChild(opt);
+            });
+        }
+    } catch (err) {
+        console.warn('프로젝트 옵션 로드 실패:', err);
+    }
+
+    select.value = selectedProjectId != null ? String(selectedProjectId) : '';
+}
+
+async function applyDetailProject() {
+    if (!resultData || !resultData.summaryId) return;
+    const select = document.getElementById('detailProjectSelect');
+    const btn = document.getElementById('detailProjectApplyBtn');
+    if (!select) return;
+
+    const newProjectId = select.value ? parseInt(select.value, 10) : null;
+    if (btn) { btn.disabled = true; btn.textContent = '적용 중...'; }
+    try {
+        const res = await authFetch(`${API_BASE_URL}/summaries/${resultData.summaryId}/project`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project_id: newProjectId }),
+        });
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || '분류 변경 실패');
+        }
+        const data = await res.json();
+        resultData.projectId = data.project_id;
+        if (data.project_name) {
+            showToast(`"${data.project_name}" 프로젝트로 분류했어요. 분류를 마치면 프로젝트의 AI 메모리 탭에서 "전체 재구축"을 눌러주세요.`, { type: 'success', duration: 7000 });
+        } else {
+            showToast('프로젝트 분류를 해제했어요.', { type: 'success' });
+        }
+    } catch (err) {
+        console.error(err);
+        showToast('분류 변경 중 오류: ' + err.message, { type: 'error' });
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '분류 적용'; }
+    }
+}
+
+// ---- 상세에서 삭제 ----
+
+async function deleteCurrentSummary() {
+    if (!resultData || !resultData.summaryId) return;
+    const title = resultData.meetingTitle || resultData.fileName || '이 회의록';
+    if (!confirm(`"${title}"을(를) 삭제할까요?\n버전 이력까지 함께 삭제되며 되돌릴 수 없습니다.`)) return;
+    try {
+        const res = await authFetch(`${API_BASE_URL}/summaries/${resultData.summaryId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('삭제 실패');
+        showToast('회의록을 삭제했어요.', { type: 'success' });
+        switchView('dashboard');
+    } catch (err) {
+        console.error(err);
+        showToast('삭제 중 오류: ' + err.message, { type: 'error' });
+    }
 }
 
 // 탭 전환
@@ -387,35 +444,20 @@ async function sendEmail() {
     }
 }
 
-// ---- 리셋 ----
+// ---- 상세 상태 정리 (상세 페이지를 떠날 때 호출) ----
 
-// 리셋 — 결과 화면을 닫고 업로드 영역으로 돌아감. 진행 중인 작업 카드는 유지.
-function reset() {
-    selectedFiles = [];
-    audioDurations = [];
+function clearDetailState() {
     resultData = null;
-    if (fileInput) fileInput.value = '';
-
-    // 버전 상태 초기화
     currentSummaryId = null;
     currentVersions = [];
     currentVersionNo = null;
     isViewingLatest = true;
     isDiffOpen = false;
+    if (isEditMode) cancelEdit();
     const versionBar = document.getElementById('versionBar');
     if (versionBar) versionBar.style.display = 'none';
     const diffView = document.getElementById('diffView');
     if (diffView) diffView.style.display = 'none';
     const oldNotice = document.getElementById('viewingOldNotice');
     if (oldNotice) oldNotice.remove();
-
-    // 업로드 카드 펼치기
-    expandUploadCard();
-
-    // 결과 숨기기 (작업 큐 카드는 유지 — 다른 진행 중 작업이 있을 수 있음)
-    resultSection.style.display = 'none';
-    setResultBackLink(false);
-
-    clearFile();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
 }

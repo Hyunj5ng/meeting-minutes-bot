@@ -106,6 +106,63 @@ async def _generate_updated_memory(
         return None
 
 
+async def run_full_rebuild(project_id: int, user_id: int) -> None:
+    """프로젝트의 모든 회의록을 시간순으로 재생하며 메모리를 처음부터 다시 빌드.
+
+    회의록을 나중에 프로젝트로 분류했거나, 메모리 기능 도입 전의 회의록이
+    반영되지 않은 경우를 위한 수동 트리거 (POST /projects/{id}/rebuild-memory).
+    BackgroundTask 진입점 — 실패는 로그만 남긴다."""
+    try:
+        db = SessionLocal()
+        try:
+            project = crud.get_project(db, project_id, user_id)
+            if not project:
+                return
+            project_name = project.name
+            summaries = crud.get_summaries_for_project_asc(db, user_id, project_id)
+            inputs = [
+                {
+                    "summary": s.summary,
+                    "title": s.transcript.meeting_title if s.transcript else None,
+                    "date": s.created_at.strftime("%Y-%m-%d") if s.created_at else None,
+                }
+                for s in summaries
+            ]
+        finally:
+            db.close()
+
+        if not inputs:
+            print(f"[ProjectMemory] project_id={project_id} 재구축 스킵 (회의록 없음)")
+            return
+
+        print(f"[ProjectMemory] project_id={project_id} 재구축 시작 ({len(inputs)}개 회의록, 시간순)")
+        memory = None
+        for i, item in enumerate(inputs, 1):
+            updated = await _generate_updated_memory(
+                old_memory=memory,
+                new_summary=item["summary"],
+                project_name=project_name,
+                meeting_title=item["title"],
+                meeting_date=item["date"],
+            )
+            if updated:
+                memory = updated
+            print(f"[ProjectMemory] 재구축 진행 {i}/{len(inputs)}")
+
+        if not memory:
+            print(f"[ProjectMemory] project_id={project_id} 재구축 실패 (메모리 생성 안 됨)")
+            return
+
+        db = SessionLocal()
+        try:
+            crud.set_project_memory(db, project_id, user_id, memory)
+            print(f"[ProjectMemory] project_id={project_id} 재구축 완료 ({len(memory)}자)")
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[ProjectMemory] 재구축 실패 (무시): {e}")
+
+
 async def run_memory_update(
     project_id: int,
     user_id: int,

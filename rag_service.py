@@ -138,6 +138,21 @@ class RAGService:
             print(f"RAG 검색 실패: {e}")
             return []
 
+    def update_summary_metadata(self, user_id: int, summary_id: int, metadata: dict):
+        """임베딩 재계산 없이 메타데이터만 갱신 (프로젝트 재분류 시 사용)"""
+        try:
+            collection = self._get_collection(user_id)
+            doc_id = f"summary_{summary_id}"
+            existing = collection.get(ids=[doc_id])
+            if not existing or not existing["ids"]:
+                return
+            doc_metadata = {"summary_id": summary_id, "user_id": user_id}
+            doc_metadata.update(metadata or {})
+            collection.update(ids=[doc_id], metadatas=[doc_metadata])
+            print(f"RAG 메타데이터 갱신: user={user_id}, summary={summary_id}")
+        except Exception as e:
+            print(f"RAG 메타데이터 갱신 실패 (무시): {e}")
+
     def delete_summary(self, user_id: int, summary_id: int):
         """요약 삭제 시 임베딩도 제거 (회의록 삭제와 동기화)"""
         try:

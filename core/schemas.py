@@ -41,6 +41,10 @@ class SummaryUpdateRequest(BaseModel):
     summary: str
 
 
+class SummaryProjectUpdateRequest(BaseModel):
+    project_id: int | None = None  # None이면 프로젝트 해제
+
+
 class ProjectCreateRequest(BaseModel):
     name: str
     description: str | None = None

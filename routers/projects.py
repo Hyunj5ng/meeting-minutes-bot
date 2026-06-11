@@ -3,10 +3,11 @@
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 import crud
+import project_memory
 from auth import get_current_user
 from core.schemas import ProjectCreateRequest, ProjectUpdateRequest
 from core.serializers import (
@@ -133,6 +134,37 @@ async def update_project(
     if not project:
         raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
     return {"success": True, "project": serialize_project(project, include_memory=True)}
+
+
+@router.post("/projects/{project_id}/rebuild-memory")
+async def rebuild_project_memory(
+    project_id: int,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """프로젝트의 모든 회의록(시간순)으로 AI 메모리를 처음부터 재구축.
+
+    회의록을 나중에 프로젝트로 분류했거나, 메모리 도입 전 회의록이
+    누락된 경우 사용. 백그라운드로 실행되며 회의록 수에 따라 수 분 걸릴 수 있다."""
+    project = crud.get_project(db, project_id, current_user.id)
+    if not project:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
+
+    summary_count = len(crud.get_summaries_for_project_asc(db, current_user.id, project_id))
+    if summary_count == 0:
+        raise HTTPException(status_code=400, detail="이 프로젝트에 회의록이 없습니다. 먼저 회의록을 분류해주세요.")
+
+    background_tasks.add_task(
+        project_memory.run_full_rebuild,
+        project_id=project_id,
+        user_id=current_user.id,
+    )
+    return {
+        "success": True,
+        "message": f"{summary_count}개 회의록으로 메모리 재구축을 시작했습니다. 회의록 수에 따라 수 분 걸릴 수 있어요.",
+        "summary_count": summary_count,
+    }
 
 
 @router.delete("/projects/{project_id}")

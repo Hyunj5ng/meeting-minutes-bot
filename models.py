@@ -223,6 +223,7 @@ class SummaryRecord(Base):
 
     # 타임스탬프
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="생성 시각")
+    viewed_at = Column(DateTime(timezone=True), nullable=True, comment="처음 열람한 시각 (NULL = 읽지 않음)")
 
     # 관계 (N:1 - 여러 summary가 하나의 transcript에 속함)
     transcript = relationship("TranscriptRecord", back_populates="summaries")

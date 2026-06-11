@@ -31,9 +31,15 @@ AI 기반 회의 음성 파일 → 텍스트 변환(STT) → 회의록 요약 �
 
 ## 학습 시스템 (쓸수록 똑똑해지는 구조)
 - **프로젝트 메모리**: `/summarize` 성공 → BackgroundTask로 `project_memory.run_memory_update` → `projects.memory` 갱신 → 다음 요약 프롬프트에 주입
+- **메모리 전체 재구축**: `POST /projects/{id}/rebuild-memory` → 모든 회의록 시간순 재생 (과거 회의록을 나중에 분류한 경우)
 - **수정 학습**: `PUT /summaries/{id}` → `context_learner.run_learning_task` → diff에서 용어('term')/스타일('style') 추출 → `context_entries`에 source='auto'로 적재
 - 사용자가 직접 수정한(manual) 엔트리는 자동 학습이 절대 덮어쓰지 않음
 - UI 알림은 alert() 금지 — `showToast()` (core.js) 사용
+
+## UI 페이지 구조 (한 화면에 몰지 않기)
+- 업로드(새 회의록) / 처리 중(작업 큐) / 내 회의록(리스트, 페이지네이션+읽지않음 점) / 상세·편집(detailView) / 프로젝트 / 내 컨텍스트 / 내 페이지(통계+메타 프롬프트)
+- 생성 완료 시 결과를 바로 띄우지 않음 — 리스트에 unread로 쌓이고 사용자가 열어서 검토·수정 (`viewed_at` 마킹)
+- 회의록 상세에서 프로젝트 분류 변경 가능 (`PUT /summaries/{id}/project`)
 
 ## UI 디자인 원칙
 - 단일 브랜드 컬러(티일 `--brand-600`) + 중립 배경. 상태 컬러(성공/경고/위험)는 의미가 있을 때만 사용

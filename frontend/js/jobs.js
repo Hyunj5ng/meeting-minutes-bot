@@ -39,9 +39,6 @@ async function handleConvert() {
         autoEmail: document.getElementById('autoEmailCheckbox')?.checked || false,
     };
 
-    const queueCard = document.getElementById('jobQueueCard');
-    if (queueCard) queueCard.style.display = 'block';
-
     if (mergeMode) {
         // 합치기 모드: 1개 job, 첫 번째 파일의 메타 사용
         const primaryMeta = fileMetas[0] || { meetingTitle: '', attendees: '' };
@@ -66,6 +63,9 @@ async function handleConvert() {
     clearFile();
 
     runJobQueue();
+
+    // 처리 중 페이지로 이동 — 진행 상황은 거기서 확인
+    switchView('processing');
 }
 
 function makeJob(files, durations, options, mergeMode) {
@@ -381,8 +381,22 @@ function updateJobCard(job, { status, pct, state, stage, stageDone, error }) {
 }
 
 function refreshJobQueueCount() {
+    const active = getActiveJobCount();
     const countEl = document.getElementById('jobQueueCount');
-    if (countEl) countEl.textContent = String(getActiveJobCount());
+    if (countEl) countEl.textContent = String(active);
+
+    // 네비 "처리 중" 버튼: 카드가 하나라도 있으면 노출 + 활성 작업 수 배지
+    const navBtn = document.getElementById('navProcessing');
+    const badge = document.getElementById('navProcessingBadge');
+    if (navBtn) navBtn.hidden = jobsById.size === 0;
+    if (badge) {
+        badge.textContent = String(active);
+        badge.hidden = active === 0;
+    }
+
+    // 처리 중 페이지 empty state
+    const emptyEl = document.getElementById('jobQueueEmpty');
+    if (emptyEl) emptyEl.style.display = jobsById.size === 0 ? '' : 'none';
 }
 
 function cancelJob(job) {
@@ -415,70 +429,23 @@ function removeJobCard(job) {
         job.cardEl.parentNode.removeChild(job.cardEl);
     }
     jobsById.delete(job.id);
-    // 작업이 모두 사라지면 큐 카드 숨김
-    if (jobsById.size === 0) {
-        const queueCard = document.getElementById('jobQueueCard');
-        if (queueCard) queueCard.style.display = 'none';
-    }
     refreshJobQueueCount();
 }
 
-// 작업 완료 알림: 한가하면 결과를 바로 펼치고, 아니면 토스트로 안내
+// 작업 완료 알림: 회의록은 "내 회의록" 리스트에 읽지 않음으로 쌓인다
 function announceJobDone(job) {
-    const othersBusy = getActiveJobCount() > 0; // 본인은 이미 done이므로 남은 활성 작업만 집계됨
-    const resultVisible = resultSection && resultSection.style.display !== 'none';
-
-    // 사용자가 생성 화면에 있고, 다른 작업/열린 결과가 없으면 바로 보여준다
-    if (currentView === 'create' && !othersBusy && !resultVisible && !isEditMode) {
-        viewJobResult(job);
-        showToast(`"${job.displayName}" 회의록이 완성됐어요.`, { type: 'success' });
-        return;
-    }
-
-    showToast(`"${job.displayName}" 회의록이 완성됐어요.`, {
+    showToast(`"${job.displayName}" 회의록이 완성됐어요. 내 회의록에 쌓아뒀습니다.`, {
         type: 'success',
         duration: 10000,
-        actionLabel: '결과 보기',
-        onAction: () => {
-            switchView('create');
-            viewJobResult(job);
-        },
+        actionLabel: '바로 보기',
+        onAction: () => viewJobResult(job),
     });
 }
 
-// 완료된 작업을 결과 페이지에 표시
+// 완료된 작업의 회의록 열기 — 상세/편집 페이지로 (서버 조회로 읽음 처리까지)
 async function viewJobResult(job) {
-    if (job.status !== 'done' || !job.summary) return;
-
-    resultData = {
-        transcriptId: job.transcriptId,
-        transcript: job.transcript,
-        filename: job.displayName,
-        fileSize: job.totalSize,
-        audioDuration: job.totalDuration,
-        timestamp: job.timestamp,
-        summary: job.summary,
-        summaryId: job.summaryId,
-        gptModel: job.options.gptModel,
-    };
-
-    // 버전 상태 초기화 (방금 만들어진 v1=ai_initial)
-    currentSummaryId = job.summaryId;
-    currentVersions = [{
-        version_no: 1,
-        source: 'ai_initial',
-        content: job.summary,
-        created_at: new Date().toISOString(),
-    }];
-    currentVersionNo = 1;
-    isViewingLatest = true;
-    isDiffOpen = false;
-
-    const titleEl = document.getElementById('resultTitle');
-    if (titleEl) titleEl.textContent = '회의록 생성 완료!';
-    setResultBackLink(false); // 작업 큐에서 연 결과는 목록 백링크 불필요
-    showResult(resultData);
-    renderVersionBar();
+    if (job.status !== 'done' || !job.summaryId) return;
+    openSummaryFromDashboard(job.summaryId);
 }
 
 function showJobToast(job, message) {

@@ -353,6 +353,113 @@ def get_all_summary_records(
     ).offset(skip).limit(limit).all()
 
 
+def count_summary_records(db: Session, user_id: int, keyword: str = "") -> int:
+    """사용자의 요약 레코드 총 건수 (검색어 있으면 동일 조건으로 카운트)"""
+    q = db.query(sa_func.count(SummaryRecord.id)).join(TranscriptRecord).filter(
+        TranscriptRecord.user_id == user_id,
+    )
+    if keyword and keyword.strip():
+        pattern = f"%{keyword.strip()}%"
+        q = q.filter(
+            (SummaryRecord.summary.ilike(pattern)) |
+            (TranscriptRecord.filename.ilike(pattern)) |
+            (TranscriptRecord.meeting_title.ilike(pattern)) |
+            (TranscriptRecord.project_name.ilike(pattern))
+        )
+    return q.scalar() or 0
+
+
+def mark_summary_viewed(db: Session, record: SummaryRecord) -> None:
+    """처음 열람 시 viewed_at 기록 (이미 읽음이면 no-op)"""
+    if record.viewed_at is None:
+        record.viewed_at = sa_func.now()
+        db.commit()
+
+
+def set_summary_project(
+    db: Session,
+    summary_id: int,
+    user_id: int,
+    project_id: Optional[int],
+) -> Optional[SummaryRecord]:
+    """회의록(의 transcript)을 다른 프로젝트로 분류 변경.
+    project_id=None이면 프로젝트 해제. 반환 None은 권한 없음/미존재."""
+    record = db.query(SummaryRecord).join(TranscriptRecord).filter(
+        SummaryRecord.id == summary_id,
+        TranscriptRecord.user_id == user_id,
+    ).first()
+    if not record:
+        return None
+
+    transcript = record.transcript
+    if project_id is None:
+        transcript.project_id = None
+        transcript.project_name = None
+    else:
+        project = get_project(db, project_id, user_id)
+        if not project:
+            return None
+        transcript.project_id = project.id
+        transcript.project_name = project.name
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+def get_summaries_for_project_asc(db: Session, user_id: int, project_id: int, limit: int = 30) -> List[SummaryRecord]:
+    """프로젝트의 회의록을 오래된 순으로 (메모리 재구축용 — 시간순 재생).
+    너무 많으면 최신 limit개만 시간순으로."""
+    rows = db.query(SummaryRecord).join(TranscriptRecord).filter(
+        TranscriptRecord.user_id == user_id,
+        TranscriptRecord.project_id == project_id,
+    ).order_by(SummaryRecord.created_at.desc()).limit(limit).all()
+    return list(reversed(rows))
+
+
+def get_user_stats(db: Session, user_id: int) -> dict:
+    """내 페이지용 누적 사용 통계"""
+    total_summaries = db.query(sa_func.count(SummaryRecord.id)).join(TranscriptRecord).filter(
+        TranscriptRecord.user_id == user_id,
+    ).scalar() or 0
+
+    total_projects = db.query(sa_func.count(Project.id)).filter(
+        Project.user_id == user_id,
+    ).scalar() or 0
+
+    stt_row = db.query(
+        sa_func.coalesce(sa_func.sum(TranscriptRecord.audio_duration), 0.0),
+        sa_func.coalesce(sa_func.sum(TranscriptRecord.stt_cost), 0.0),
+    ).filter(TranscriptRecord.user_id == user_id).first()
+    stt_seconds, stt_cost = float(stt_row[0] or 0), float(stt_row[1] or 0)
+
+    llm_cost = float(db.query(
+        sa_func.coalesce(sa_func.sum(SummaryRecord.llm_cost), 0.0)
+    ).join(TranscriptRecord).filter(
+        TranscriptRecord.user_id == user_id,
+    ).scalar() or 0)
+
+    model_rows = db.query(
+        SummaryRecord.gpt_model,
+        sa_func.count(SummaryRecord.id),
+        sa_func.coalesce(sa_func.sum(SummaryRecord.llm_cost), 0.0),
+    ).join(TranscriptRecord).filter(
+        TranscriptRecord.user_id == user_id,
+    ).group_by(SummaryRecord.gpt_model).order_by(sa_func.count(SummaryRecord.id).desc()).all()
+
+    return {
+        "total_summaries": total_summaries,
+        "total_projects": total_projects,
+        "stt_minutes": round(stt_seconds / 60.0, 1),
+        "stt_cost": round(stt_cost, 4),
+        "llm_cost": round(llm_cost, 4),
+        "total_cost": round(stt_cost + llm_cost, 4),
+        "models": [
+            {"model": m or "(미지정)", "count": int(c), "cost": round(float(cost or 0), 4)}
+            for m, c, cost in model_rows
+        ],
+    }
+
+
 def delete_summary_record(db: Session, summary_id: int, user_id: int) -> bool:
     """요약 레코드 삭제 (소유권 확인)"""
     record = db.query(SummaryRecord).join(TranscriptRecord).filter(

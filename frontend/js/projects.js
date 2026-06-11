@@ -168,6 +168,29 @@ async function saveProjectMemory() {
     }
 }
 
+async function rebuildProjectMemory() {
+    if (!currentProjectDetail) return;
+    const p = currentProjectDetail.project;
+    if (!confirm(`"${p.name}"의 모든 회의록을 시간순으로 다시 읽어 AI 메모리를 처음부터 재구축할까요?\n현재 메모리는 대체되며, 회의록 수에 따라 수 분 걸릴 수 있습니다.`)) return;
+
+    const btn = document.getElementById('projectMemoryRebuildBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '재구축 중...'; }
+    try {
+        const res = await authFetch(`${API_BASE_URL}/projects/${p.id}/rebuild-memory`, { method: 'POST' });
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || '재구축 요청 실패');
+        }
+        const data = await res.json();
+        showToast(data.message + ' 끝나면 이 탭을 다시 열어 확인하세요.', { type: 'success', duration: 9000 });
+    } catch (err) {
+        console.error(err);
+        showToast('메모리 재구축 중 오류: ' + err.message, { type: 'error' });
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '↻ 전체 회의록으로 재구축'; }
+    }
+}
+
 // ============================================
 // 프로젝트 생성/편집/삭제 (모달)
 // ============================================

@@ -15,6 +15,7 @@ def serialize_summary_for_list(record) -> dict:
         "created_at": record.created_at.isoformat() if record.created_at else None,
         "version_count": version_count,
         "is_edited": version_count > 1,
+        "is_unread": record.viewed_at is None,
         "filename": transcript.filename if transcript else None,
         "meeting_title": transcript.meeting_title if transcript else None,
         "project_name": transcript.project_name if transcript else None,

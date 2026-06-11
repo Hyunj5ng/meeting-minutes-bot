@@ -3,23 +3,34 @@
 // 모든 스크립트 중 마지막에 로드된다 (index.html 로드 순서 참고)
 // ============================================
 
-// ---- 뷰 전환 (생성 / 대시보드 / 프로젝트 / 내 컨텍스트) ----
+// ---- 뷰 전환 (페이지 구조: 업로드 / 처리 중 / 목록 / 상세 / 프로젝트 / 컨텍스트 / 내 페이지) ----
 
 function switchView(view) {
+    const prevView = currentView;
     currentView = view;
     const views = {
         create: document.getElementById('createView'),
+        processing: document.getElementById('processingView'),
         dashboard: document.getElementById('dashboardView'),
+        detail: document.getElementById('detailView'),
         projects: document.getElementById('projectsView'),
         projectDetail: document.getElementById('projectDetailView'),
         personalContext: document.getElementById('personalContextView'),
+        mypage: document.getElementById('myPageView'),
     };
     const navButtons = {
         create: document.getElementById('navCreate'),
+        processing: document.getElementById('navProcessing'),
         dashboard: document.getElementById('navDashboard'),
         projects: document.getElementById('navProjects'),
         personalContext: document.getElementById('navPersonalContext'),
+        mypage: document.getElementById('navMyPage'),
     };
+
+    // 상세 페이지를 떠나면 상세 상태 정리
+    if (prevView === 'detail' && view !== 'detail' && typeof clearDetailState === 'function') {
+        clearDetailState();
+    }
 
     // 모든 뷰 숨기기
     Object.values(views).forEach(el => { if (el) el.style.display = 'none'; });
@@ -27,17 +38,20 @@ function switchView(view) {
 
     // 활성화
     if (views[view]) views[view].style.display = '';
-    // 프로젝트 상세는 "프로젝트" 네비를 켠 상태로 유지
+    // 하위 페이지는 상위 네비를 켠 상태로 유지
     if (view === 'projectDetail' && navButtons.projects) {
         navButtons.projects.classList.add('active');
+    } else if (view === 'detail' && navButtons.dashboard) {
+        navButtons.dashboard.classList.add('active');
     } else if (navButtons[view]) {
         navButtons[view].classList.add('active');
     }
 
     // 진입 시 자동 로드
-    if (view === 'dashboard') loadDashboard('');
+    if (view === 'dashboard') loadDashboard(dashboardQuery, dashboardPage);
     if (view === 'projects') loadProjects();
     if (view === 'personalContext') loadPersonalContext();
+    if (view === 'mypage') loadMyPage();
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -50,7 +64,6 @@ function initDomElements() {
     convertBtn = document.getElementById('convertBtn');
     resultSection = document.getElementById('resultSection');
     copyBtn = document.getElementById('copyBtn');
-    resetBtn = document.getElementById('resetBtn');
 }
 
 function setupEventListeners() {
@@ -68,9 +81,12 @@ function setupEventListeners() {
     // 변환 버튼
     convertBtn.addEventListener('click', handleConvert);
 
-    // 결과 관련
+    // 상세 페이지 관련
     copyBtn.addEventListener('click', copyToClipboard);
-    resetBtn.addEventListener('click', reset);
+    const detailProjectApplyBtn = document.getElementById('detailProjectApplyBtn');
+    if (detailProjectApplyBtn) detailProjectApplyBtn.addEventListener('click', applyDetailProject);
+    const detailDeleteBtn = document.getElementById('detailDeleteBtn');
+    if (detailDeleteBtn) detailDeleteBtn.addEventListener('click', deleteCurrentSummary);
 
     // 로그아웃
     document.getElementById('logoutBtn').addEventListener('click', logout);
@@ -81,36 +97,43 @@ function setupEventListeners() {
         tab.addEventListener('click', () => switchTab(tab.dataset.tab));
     });
 
-    // Accordion 토글 (접힌 상태에서 클릭하면 펼침)
-    const uploadCardHeader = document.getElementById('uploadCardHeader');
-    if (uploadCardHeader) {
-        uploadCardHeader.addEventListener('click', () => {
-            const card = document.getElementById('uploadCard');
-            if (card.classList.contains('collapsed')) {
-                toggleUploadCard();
-            }
-        });
-    }
-
     // 뷰 전환 네비
     const navCreate = document.getElementById('navCreate');
+    const navProcessing = document.getElementById('navProcessing');
     const navDashboard = document.getElementById('navDashboard');
     const navProjects = document.getElementById('navProjects');
     const navPersonalContext = document.getElementById('navPersonalContext');
+    const navMyPage = document.getElementById('navMyPage');
     if (navCreate) navCreate.addEventListener('click', () => switchView('create'));
+    if (navProcessing) navProcessing.addEventListener('click', () => switchView('processing'));
     if (navDashboard) navDashboard.addEventListener('click', () => switchView('dashboard'));
     if (navProjects) navProjects.addEventListener('click', () => switchView('projects'));
     if (navPersonalContext) navPersonalContext.addEventListener('click', () => switchView('personalContext'));
+    if (navMyPage) navMyPage.addEventListener('click', () => switchView('mypage'));
 
-    // 대시보드 검색 (300ms 디바운스)
+    // 대시보드 검색 (300ms 디바운스, 검색 시 1페이지로)
     const dashboardSearchInput = document.getElementById('dashboardSearch');
     if (dashboardSearchInput) {
         dashboardSearchInput.addEventListener('input', (e) => {
             const q = e.target.value.trim();
             if (dashboardSearchTimer) clearTimeout(dashboardSearchTimer);
-            dashboardSearchTimer = setTimeout(() => loadDashboard(q), 300);
+            dashboardSearchTimer = setTimeout(() => loadDashboard(q, 1), 300);
         });
     }
+
+    // 대시보드 페이지네이션
+    const dashboardPrevBtn = document.getElementById('dashboardPrevBtn');
+    const dashboardNextBtn = document.getElementById('dashboardNextBtn');
+    if (dashboardPrevBtn) dashboardPrevBtn.addEventListener('click', () => loadDashboard(dashboardQuery, dashboardPage - 1));
+    if (dashboardNextBtn) dashboardNextBtn.addEventListener('click', () => loadDashboard(dashboardQuery, dashboardPage + 1));
+
+    // 내 페이지: 메타 프롬프트 토글
+    const togglePromptBtn = document.getElementById('togglePromptBtn');
+    if (togglePromptBtn) togglePromptBtn.addEventListener('click', toggleSystemPrompt);
+
+    // 프로젝트 AI 메모리 재구축
+    const projectMemoryRebuildBtn = document.getElementById('projectMemoryRebuildBtn');
+    if (projectMemoryRebuildBtn) projectMemoryRebuildBtn.addEventListener('click', rebuildProjectMemory);
 
     // 버전 드롭다운 + diff 토글
     const versionSelect = document.getElementById('versionSelect');
