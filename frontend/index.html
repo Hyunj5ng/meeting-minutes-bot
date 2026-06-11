@@ -11,104 +11,100 @@
     <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
-    <div class="container">
-        <!-- 로그인 섹션 -->
-        <section class="login-section" id="loginSection" style="display: none;">
-            <div class="login-card">
-                <img src="/images/logo.png" alt="Summarying logo" class="login-logo">
-                <h2>Summarying!</h2>
-                <p class="login-subtitle">로그인하고 AI 회의록을 시작하세요</p>
-                <div id="googleSignInBtn"></div>
-            </div>
-        </section>
+    <!-- 로그인 섹션 -->
+    <section class="login-section" id="loginSection" style="display: none;">
+        <div class="login-card">
+            <img src="/images/logo.png" alt="Summarying logo" class="login-logo">
+            <h1>Summarying!</h1>
+            <p class="login-subtitle">말하면 끝, AI가 알잘딱으로 요약해드립니다</p>
+            <div id="googleSignInBtn"></div>
+        </div>
+    </section>
 
-        <!-- 헤더 -->
-        <header class="header" id="appHeader" style="display: none;">
-            <div class="header-top">
-                <div class="logo">
-                    <img src="/images/logo.png" alt="Summarying logo">
-                    <h1>Summarying!</h1>
-                </div>
-                <div class="user-info" id="userInfo">
-                    <img id="userPicture" class="user-avatar" src="" alt="">
-                    <span id="userName"></span>
-                    <button class="btn-logout" id="logoutBtn">로그아웃</button>
-                </div>
+    <!-- 상단 바 -->
+    <header class="topbar" id="appHeader" style="display: none;">
+        <div class="topbar-inner">
+            <div class="topbar-brand">
+                <img src="/images/logo.png" alt="Summarying logo">
+                <span class="topbar-brand-name">Summarying!</span>
             </div>
-            <p class="subtitle">말하면 끝, AI가 알잘딱으로 요약해드립니다</p>
-            <!-- 사용량 표시 -->
-            <div class="usage-bar" id="usageBar" style="display: none;">
-                <div class="usage-item">
-                    <span class="usage-label">STT</span>
-                    <span class="usage-value">오늘 <span id="dailyStt">0</span>/<span id="dailySttLimit">60</span>분</span>
-                </div>
-            </div>
+
             <!-- 뷰 전환 네비게이션 -->
             <nav class="view-nav" id="viewNav" style="display: none;">
-                <button class="view-nav-btn active" data-view="create" id="navCreate">새 회의록 만들기</button>
+                <button class="view-nav-btn active" data-view="create" id="navCreate">새 회의록</button>
                 <button class="view-nav-btn" data-view="dashboard" id="navDashboard">내 회의록</button>
                 <button class="view-nav-btn" data-view="projects" id="navProjects">프로젝트</button>
                 <button class="view-nav-btn" data-view="personalContext" id="navPersonalContext">내 컨텍스트</button>
             </nav>
-        </header>
 
-        <!-- 메인 컨텐츠 -->
-        <main class="main-content" id="mainContent" style="display: none;">
-            <!-- 통합 워크플로우 -->
-            <section class="unified-workflow" id="createView">
-                <!-- 업로드 영역 (accordion) -->
-                <div class="workflow-card upload-card" id="uploadCard">
-                    <div class="upload-card-header" id="uploadCardHeader">
-                        <h3>음성 파일 업로드</h3>
-                        <svg class="accordion-arrow" id="accordionArrow" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M5 8L10 13L15 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <div class="topbar-side">
+                <!-- 사용량 표시 -->
+                <div class="usage-bar" id="usageBar" style="display: none;" title="오늘 STT 사용량">
+                    <span class="usage-label">STT</span>
+                    <span class="usage-value">오늘 <span id="dailyStt">0</span>/<span id="dailySttLimit">300</span>분</span>
+                </div>
+                <div class="user-info" id="userInfo">
+                    <img id="userPicture" class="user-avatar" src="" alt="">
+                    <span id="userName" class="user-name"></span>
+                    <button class="btn-logout" id="logoutBtn">로그아웃</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 메인 컨텐츠 -->
+    <main class="container main-content" id="mainContent" style="display: none;">
+        <!-- 통합 워크플로우 -->
+        <section class="unified-workflow" id="createView">
+            <!-- 업로드 영역 (accordion) -->
+            <div class="workflow-card upload-card" id="uploadCard">
+                <div class="upload-card-header" id="uploadCardHeader">
+                    <h3>음성 파일 업로드</h3>
+                    <svg class="accordion-arrow" id="accordionArrow" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M5 8L10 13L15 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <div class="upload-card-body" id="uploadCardBody">
+                    <div class="upload-area" id="uploadArea">
+                        <svg class="upload-icon" width="44" height="44" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M32 16V40M32 16L24 24M32 16L40 24M16 48H48" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
+                        <h4>음성 파일을 드래그하거나 클릭하세요</h4>
+                        <p>여러 파일을 한 번에 선택할 수 있어요 · MP3, WAV, M4A, OGG, FLAC, AAC</p>
+                        <input type="file" id="fileInput" accept=".mp3,.wav,.m4a,.ogg,.flac,.aac" multiple hidden>
+                        <button class="btn-browse" onclick="event.stopPropagation(); document.getElementById('fileInput').click()">
+                            파일 선택
+                        </button>
                     </div>
-                    <div class="upload-card-body" id="uploadCardBody">
-                        <div class="upload-area" id="uploadArea">
-                            <svg class="upload-icon" width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M32 16V40M32 16L24 24M32 16L40 24M16 48H48" stroke="#9CA3AF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                            <h3>음성 파일을 드래그하거나 클릭하세요</h3>
-                            <p>여러 파일을 한 번에 선택할 수 있어요 · 지원: MP3, WAV, M4A, OGG, FLAC, AAC</p>
-                            <input type="file" id="fileInput" accept=".mp3,.wav,.m4a,.ogg,.flac,.aac" multiple hidden>
-                            <button class="btn-browse" onclick="event.stopPropagation(); document.getElementById('fileInput').click()">
-                                파일 선택
-                            </button>
-                        </div>
 
-                        <!-- 선택된 파일 정보 (다중 파일 리스트) -->
-                        <div class="file-info-list" id="fileInfoList" style="display: none;">
-                            <div class="file-info-list-header">
-                                <span><strong id="fileInfoCount">0</strong>개 파일 선택됨</span>
-                                <button type="button" class="file-info-clear" id="fileInfoClear">전체 지우기</button>
-                            </div>
-                            <ul class="file-info-items" id="fileInfoItems"></ul>
-                            <label class="merge-toggle">
-                                <input type="checkbox" id="mergeFilesCheckbox">
-                                <span class="merge-toggle-label">이 파일들을 하나의 회의록으로 합치기</span>
-                                <span class="merge-toggle-hint">휴식 후 이어진 회의처럼 시간이 연결된 경우 체크</span>
-                            </label>
+                    <!-- 선택된 파일 정보 (다중 파일 리스트) -->
+                    <div class="file-info-list" id="fileInfoList" style="display: none;">
+                        <div class="file-info-list-header">
+                            <span><strong id="fileInfoCount">0</strong>개 파일 선택됨</span>
+                            <button type="button" class="file-info-clear" id="fileInfoClear">전체 지우기</button>
                         </div>
+                        <ul class="file-info-items" id="fileInfoItems"></ul>
+                        <label class="merge-toggle">
+                            <input type="checkbox" id="mergeFilesCheckbox">
+                            <span class="merge-toggle-label">이 파일들을 하나의 회의록으로 합치기</span>
+                            <span class="merge-toggle-hint">휴식 후 이어진 회의처럼 시간이 연결된 경우 체크</span>
+                        </label>
+                    </div>
 
-                        <!-- 프로젝트 (모든 파일 공통) -->
-                        <div class="options-section">
-                            <h4>프로젝트 <span class="options-section-hint">(모든 파일에 공통 적용)</span></h4>
+                    <!-- 프로젝트 + AI 모델 (모든 파일 공통) -->
+                    <div class="options-section">
+                        <h4>공통 옵션 <span class="options-section-hint">(모든 파일에 함께 적용)</span></h4>
+                        <div class="options-grid">
                             <div class="option-group">
                                 <label for="projectSelect">프로젝트</label>
                                 <select id="projectSelect" class="select-input">
                                     <option value="">— 프로젝트 없음 —</option>
                                     <option value="__new__">+ 새 프로젝트 만들기...</option>
                                 </select>
-                                <input type="text" id="projectName" class="text-input" placeholder="새 프로젝트 이름" style="display: none; margin-top: 0.4rem;">
+                                <input type="text" id="projectName" class="text-input project-new-input" placeholder="새 프로젝트 이름" style="display: none;">
                             </div>
-                        </div>
-
-                        <!-- AI 모델 선택 -->
-                        <div class="options-section">
-                            <h4>AI 모델 선택</h4>
                             <div class="option-group">
-                                <label for="gptModelUpload">회의록 생성에 사용할 AI 모델</label>
+                                <label for="gptModelUpload">AI 모델</label>
                                 <select id="gptModelUpload" class="select-input">
                                     <optgroup label="OpenAI">
                                         <option value="gpt-5.4-pro">GPT-5.4 Pro - 최고 품질 추론</option>
@@ -143,231 +139,208 @@
                         <div class="email-option">
                             <label class="checkbox-label">
                                 <input type="checkbox" id="autoEmailCheckbox">
-                                <span>이메일로도 요약 내용을 보낼까요?</span>
+                                <span>완료되면 이메일로도 보내기</span>
                             </label>
-                            <p class="email-option-hint">체크하시면 기다릴 필요없이 이메일로 요약본을 받으실 수 있습니다.</p>
+                            <p class="email-option-hint">기다릴 필요 없이 요약본을 이메일로 받아볼 수 있어요.</p>
                         </div>
+                    </div>
 
-                        <!-- 변환 버튼 -->
-                        <button class="btn-primary" id="convertBtn" disabled>
-                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M10 4V16M10 16L14 12M10 16L6 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                            회의록 생성하기
-                        </button>
+                    <!-- 변환 버튼 -->
+                    <button class="btn-primary btn-block" id="convertBtn" disabled>
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M10 4V16M10 16L14 12M10 16L6 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        회의록 생성하기
+                    </button>
+                </div>
+            </div>
+
+            <!-- 다중 작업 큐 (최대 3개 동시 처리) -->
+            <div class="workflow-card job-queue-card" id="jobQueueCard" style="display: none;">
+                <div class="job-queue-header">
+                    <h3>처리 중인 회의록 <span id="jobQueueCount">0</span>/3</h3>
+                    <p class="job-queue-hint">최대 3개를 동시에 처리합니다. 각 카드는 끝나는 즉시 결과를 볼 수 있어요.</p>
+                </div>
+                <div class="job-queue-list" id="jobQueueList"></div>
+            </div>
+
+            <!-- 작업 카드 템플릿 -->
+            <template id="jobCardTemplate">
+                <div class="job-card" data-state="pending">
+                    <div class="job-card-head">
+                        <div class="job-card-file">
+                            <p class="job-card-filename"></p>
+                            <p class="job-card-status">대기 중...</p>
+                        </div>
+                        <div class="job-card-actions">
+                            <button type="button" class="job-card-view" data-action="view" hidden>결과 보기</button>
+                            <button type="button" class="job-card-cancel" data-action="cancel" title="취소">
+                                <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+                                    <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="job-card-progress">
+                        <div class="job-card-progress-bar"><div class="job-card-progress-fill"></div></div>
+                        <span class="job-card-progress-pct">0%</span>
+                    </div>
+                    <div class="job-card-steps">
+                        <span class="job-card-step" data-step="upload">업로드</span>
+                        <span class="job-card-step" data-step="stt">STT</span>
+                        <span class="job-card-step" data-step="summarize">요약</span>
+                    </div>
+                    <p class="job-card-error" hidden></p>
+                </div>
+            </template>
+
+            <!-- 결과 영역 (인라인) -->
+            <div class="workflow-card result-card" id="resultSection" style="display: none;">
+                <div class="result-header">
+                    <h3 id="resultTitle">회의록 생성 완료!</h3>
+                    <button class="btn-copy" id="copyBtn">
+                        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="6" y="6" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
+                            <path d="M4 14V4.5C4 3.67 4.67 3 5.5 3H14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                        </svg>
+                        텍스트 복사
+                    </button>
+                </div>
+
+                <!-- 버전 선택 영역 -->
+                <div class="version-bar" id="versionBar" style="display: none;">
+                    <label class="version-label" for="versionSelect">버전</label>
+                    <select id="versionSelect" class="select-input version-select"></select>
+                    <button class="btn-link" id="toggleDiffBtn" type="button">이전 버전과 차이 보기</button>
+                    <span class="version-badge" id="versionBadge"></span>
+                </div>
+
+                <!-- diff 뷰 -->
+                <div class="diff-view" id="diffView" style="display: none;">
+                    <div class="diff-header">
+                        <span id="diffHeaderText">차이</span>
+                        <span class="diff-legend">
+                            <span class="diff-legend-item diff-added">+ 추가</span>
+                            <span class="diff-legend-item diff-removed">− 삭제</span>
+                        </span>
+                    </div>
+                    <pre class="diff-pre" id="diffContent"></pre>
+                </div>
+
+                <!-- 탭 -->
+                <div class="tabs">
+                    <button class="tab active" data-tab="summary">회의록</button>
+                    <button class="tab" data-tab="transcript">원본 텍스트</button>
+                </div>
+
+                <!-- 회의록 -->
+                <div class="tab-content active" id="summaryContent">
+                    <div class="content-box markdown-content">
+                        <div id="summaryText"></div>
+                    </div>
+                    <!-- 편집 모드 -->
+                    <div id="editArea" style="display: none;">
+                        <textarea id="editTextarea" class="edit-textarea" rows="20"></textarea>
+                        <div class="edit-actions">
+                            <button class="btn-secondary" id="cancelEditBtn" onclick="cancelEdit()">취소</button>
+                            <button class="btn-primary" id="saveEditBtn" onclick="saveSummaryEdit()">저장</button>
+                        </div>
                     </div>
                 </div>
 
-                <!-- 다중 작업 큐 (최대 3개 동시 처리) -->
-                <div class="workflow-card job-queue-card" id="jobQueueCard" style="display: none;">
-                    <div class="job-queue-header">
-                        <h3>처리 중인 회의록 <span id="jobQueueCount">0</span>/3</h3>
-                        <p class="job-queue-hint">최대 3개를 동시에 처리합니다. 각 카드는 끝나는 즉시 결과를 볼 수 있어요.</p>
-                    </div>
-                    <div class="job-queue-list" id="jobQueueList"></div>
-                </div>
-
-                <!-- 작업 카드 템플릿 -->
-                <template id="jobCardTemplate">
-                    <div class="job-card" data-state="pending">
-                        <div class="job-card-head">
-                            <div class="job-card-file">
-                                <p class="job-card-filename"></p>
-                                <p class="job-card-status">대기 중...</p>
-                            </div>
-                            <div class="job-card-actions">
-                                <button type="button" class="job-card-view" data-action="view" hidden>결과 보기</button>
-                                <button type="button" class="job-card-cancel" data-action="cancel" title="취소">
-                                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-                                        <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                    </svg>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="job-card-progress">
-                            <div class="job-card-progress-bar"><div class="job-card-progress-fill"></div></div>
-                            <span class="job-card-progress-pct">0%</span>
-                        </div>
-                        <div class="job-card-steps">
-                            <span class="job-card-step" data-step="upload">업로드</span>
-                            <span class="job-card-step" data-step="stt">STT</span>
-                            <span class="job-card-step" data-step="summarize">요약</span>
-                        </div>
-                        <p class="job-card-error" hidden></p>
-                    </div>
-                </template>
-
-                <!-- 결과 영역 (인라인) -->
-                <div class="workflow-card result-card" id="resultSection" style="display: none;">
-                    <div class="result-header">
-                        <h3 id="resultTitle">회의록 생성 완료!</h3>
-                        <button class="btn-copy" id="copyBtn">
-                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <rect x="6" y="6" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
-                                <path d="M4 14V4.5C4 3.67 4.67 3 5.5 3H14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                            </svg>
-                            텍스트 복사
-                        </button>
-                    </div>
-
-                    <!-- 버전 선택 영역 -->
-                    <div class="version-bar" id="versionBar" style="display: none;">
-                        <label class="version-label" for="versionSelect">버전</label>
-                        <select id="versionSelect" class="select-input version-select"></select>
-                        <button class="btn-link" id="toggleDiffBtn" type="button">이전 버전과 차이 보기</button>
-                        <span class="version-badge" id="versionBadge"></span>
-                    </div>
-
-                    <!-- diff 뷰 -->
-                    <div class="diff-view" id="diffView" style="display: none;">
-                        <div class="diff-header">
-                            <span id="diffHeaderText">차이</span>
-                            <span class="diff-legend">
-                                <span class="diff-legend-item diff-added">+ 추가</span>
-                                <span class="diff-legend-item diff-removed">− 삭제</span>
-                            </span>
-                        </div>
-                        <pre class="diff-pre" id="diffContent"></pre>
-                    </div>
-
-                    <!-- 탭 -->
-                    <div class="tabs">
-                        <button class="tab active" data-tab="summary">회의록</button>
-                        <button class="tab" data-tab="transcript">원본 텍스트</button>
-                    </div>
-
-                    <!-- 회의록 -->
-                    <div class="tab-content active" id="summaryContent">
-                        <div class="content-box markdown-content">
-                            <div id="summaryText"></div>
-                        </div>
-                        <!-- 편집 모드 -->
-                        <div id="editArea" style="display: none;">
-                            <textarea id="editTextarea" class="edit-textarea" rows="20"></textarea>
-                            <div class="edit-actions">
-                                <button class="btn-secondary" id="cancelEditBtn" onclick="cancelEdit()">취소</button>
-                                <button class="btn-primary" id="saveEditBtn" onclick="saveSummaryEdit()">저장</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 원본 텍스트 -->
-                    <div class="tab-content" id="transcriptContent">
-                        <div class="content-box">
-                            <pre id="transcriptText"></pre>
-                        </div>
-                    </div>
-
-                    <!-- 액션 버튼들 -->
-                    <div style="display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap;">
-                        <button class="btn-secondary" id="editBtn" onclick="toggleEditMode()">
-                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M14.85 2.85a1.2 1.2 0 011.7 1.7L6.7 14.4l-3.4.85.85-3.4L14.85 2.85z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                            편집
-                        </button>
-                        <button class="btn-secondary" id="sendEmailBtn" onclick="sendEmail()">
-                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M2 4h16v12H2V4zm0 0l8 6 8-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                            이메일 발송
-                        </button>
-                        <button class="btn-secondary" id="resetBtn" style="flex: 1;">
-                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M4 10C4 6.68629 6.68629 4 10 4C13.3137 4 16 6.68629 16 10C16 13.3137 13.3137 16 10 16M4 10L2 8M4 10L6 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                            새로운 파일 변환하기
-                        </button>
+                <!-- 원본 텍스트 -->
+                <div class="tab-content" id="transcriptContent">
+                    <div class="content-box">
+                        <pre id="transcriptText"></pre>
                     </div>
                 </div>
-            </section>
 
-            <!-- 대시보드 뷰 -->
-            <section class="dashboard-view" id="dashboardView" style="display: none;">
-                <div class="workflow-card dashboard-card">
-                    <div class="dashboard-header">
-                        <h3>내 회의록</h3>
-                        <div class="dashboard-search">
-                            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.8"/>
-                                <path d="M14 14L17 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                            </svg>
-                            <input type="text" id="dashboardSearch" class="text-input" placeholder="제목, 파일명, 프로젝트, 본문 검색...">
-                        </div>
-                    </div>
-                    <div class="dashboard-status" id="dashboardStatus">불러오는 중...</div>
-                    <div class="dashboard-list" id="dashboardList"></div>
+                <!-- 액션 버튼들 -->
+                <div class="result-actions">
+                    <button class="btn-secondary" id="editBtn" onclick="toggleEditMode()">
+                        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M14.85 2.85a1.2 1.2 0 011.7 1.7L6.7 14.4l-3.4.85.85-3.4L14.85 2.85z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        편집
+                    </button>
+                    <button class="btn-secondary" id="sendEmailBtn" onclick="sendEmail()">
+                        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M2 4h16v12H2V4zm0 0l8 6 8-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        이메일 발송
+                    </button>
+                    <button class="btn-secondary result-actions-grow" id="resetBtn">
+                        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M4 10C4 6.68629 6.68629 4 10 4C13.3137 4 16 6.68629 16 10C16 13.3137 13.3137 16 10 16M4 10L2 8M4 10L6 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        새로운 파일 변환하기
+                    </button>
                 </div>
-            </section>
+            </div>
+        </section>
 
-            <!-- 프로젝트 목록 뷰 -->
-            <section class="dashboard-view" id="projectsView" style="display: none;">
-                <div class="workflow-card dashboard-card">
-                    <div class="dashboard-header">
-                        <h3>프로젝트</h3>
-                        <button class="btn-primary btn-compact" id="newProjectBtn" type="button">+ 새 프로젝트</button>
-                    </div>
-                    <div class="dashboard-status" id="projectsStatus">불러오는 중...</div>
-                    <div class="dashboard-list" id="projectsList"></div>
-                </div>
-            </section>
-
-            <!-- 프로젝트 상세 뷰 -->
-            <section class="dashboard-view" id="projectDetailView" style="display: none;">
-                <div class="workflow-card dashboard-card">
-                    <div class="dashboard-header">
-                        <div>
-                            <button class="btn-link" id="backToProjectsBtn" type="button">← 프로젝트 목록</button>
-                            <h3 id="projectDetailName" style="margin-top: 0.25rem;">프로젝트</h3>
-                            <p id="projectDetailDescription" class="project-description"></p>
-                        </div>
-                        <div class="project-actions">
-                            <button class="btn-secondary btn-compact" id="editProjectBtn" type="button">정보 수정</button>
-                            <button class="btn-danger btn-compact" id="deleteProjectBtn" type="button">프로젝트 삭제</button>
-                        </div>
-                    </div>
-
-                    <div class="tabs">
-                        <button class="tab active" data-project-tab="meetings">회의록</button>
-                        <button class="tab" data-project-tab="context">프로젝트 컨텍스트</button>
-                    </div>
-
-                    <div class="tab-content active" id="projectMeetingsTab">
-                        <div class="dashboard-status" id="projectMeetingsStatus"></div>
-                        <div class="dashboard-list" id="projectMeetingsList"></div>
-                    </div>
-
-                    <div class="tab-content" id="projectContextTab">
-                        <div class="context-explain">
-                            <strong>프로젝트 컨텍스트</strong>는 이 프로젝트의 회의록을 만들 때만 적용되는 용어/약어 모음입니다.
-                            예) <code>"Y H" → "Yield Hub"</code>, <code>"PDP" → "Product Detail Page"</code>
-                        </div>
-                        <div class="context-editor" data-scope="project">
-                            <div class="context-list" id="projectContextList"></div>
-                            <div class="context-add">
-                                <input type="text" class="text-input" data-field="term" placeholder="잘못된/원래 표기">
-                                <input type="text" class="text-input" data-field="correction" placeholder="올바른 표기 / 정의">
-                                <input type="text" class="text-input" data-field="note" placeholder="설명 (선택)">
-                                <button class="btn-primary btn-compact" data-action="add">추가</button>
-                            </div>
-                        </div>
+        <!-- 대시보드 뷰 -->
+        <section class="dashboard-view" id="dashboardView" style="display: none;">
+            <div class="workflow-card dashboard-card">
+                <div class="dashboard-header">
+                    <h3>내 회의록</h3>
+                    <div class="dashboard-search">
+                        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.8"/>
+                            <path d="M14 14L17 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                        </svg>
+                        <input type="text" id="dashboardSearch" class="text-input" placeholder="제목, 파일명, 프로젝트, 본문 검색...">
                     </div>
                 </div>
-            </section>
+                <div class="dashboard-status" id="dashboardStatus">불러오는 중...</div>
+                <div class="dashboard-list" id="dashboardList"></div>
+            </div>
+        </section>
 
-            <!-- 내 컨텍스트 뷰 (개인 글로서리) -->
-            <section class="dashboard-view" id="personalContextView" style="display: none;">
-                <div class="workflow-card dashboard-card">
-                    <div class="dashboard-header">
-                        <h3>내 컨텍스트</h3>
+        <!-- 프로젝트 목록 뷰 -->
+        <section class="dashboard-view" id="projectsView" style="display: none;">
+            <div class="workflow-card dashboard-card">
+                <div class="dashboard-header">
+                    <h3>프로젝트</h3>
+                    <button class="btn-primary btn-compact" id="newProjectBtn" type="button">+ 새 프로젝트</button>
+                </div>
+                <div class="dashboard-status" id="projectsStatus">불러오는 중...</div>
+                <div class="dashboard-list" id="projectsList"></div>
+            </div>
+        </section>
+
+        <!-- 프로젝트 상세 뷰 -->
+        <section class="dashboard-view" id="projectDetailView" style="display: none;">
+            <div class="workflow-card dashboard-card">
+                <div class="dashboard-header">
+                    <div>
+                        <button class="btn-link" id="backToProjectsBtn" type="button">← 프로젝트 목록</button>
+                        <h3 id="projectDetailName" class="project-detail-name">프로젝트</h3>
+                        <p id="projectDetailDescription" class="project-description"></p>
                     </div>
+                    <div class="project-actions">
+                        <button class="btn-secondary btn-compact" id="editProjectBtn" type="button">정보 수정</button>
+                        <button class="btn-danger btn-compact" id="deleteProjectBtn" type="button">프로젝트 삭제</button>
+                    </div>
+                </div>
+
+                <div class="tabs">
+                    <button class="tab active" data-project-tab="meetings">회의록</button>
+                    <button class="tab" data-project-tab="context">프로젝트 컨텍스트</button>
+                </div>
+
+                <div class="tab-content active" id="projectMeetingsTab">
+                    <div class="dashboard-status" id="projectMeetingsStatus"></div>
+                    <div class="dashboard-list" id="projectMeetingsList"></div>
+                </div>
+
+                <div class="tab-content" id="projectContextTab">
                     <div class="context-explain">
-                        <strong>내 컨텍스트</strong>는 모든 회의록 생성에 자동으로 적용되는 개인 용어/표기 모음입니다.
-                        주로 자주 마주치는 인명/팀명 등이 들어갑니다. 회의록을 수정하면 AI가 백그라운드에서 자동으로 학습해 항목을 추가합니다.
+                        <strong>프로젝트 컨텍스트</strong>는 이 프로젝트의 회의록을 만들 때만 적용되는 용어/약어 모음입니다.
+                        예) <code>"Y H" → "Yield Hub"</code>, <code>"PDP" → "Product Detail Page"</code>
                     </div>
-                    <div class="context-editor" data-scope="personal">
-                        <div class="dashboard-status" id="personalContextStatus">불러오는 중...</div>
-                        <div class="context-list" id="personalContextList"></div>
+                    <div class="context-editor" data-scope="project">
+                        <div class="context-list" id="projectContextList"></div>
                         <div class="context-add">
                             <input type="text" class="text-input" data-field="term" placeholder="잘못된/원래 표기">
                             <input type="text" class="text-input" data-field="correction" placeholder="올바른 표기 / 정의">
@@ -376,40 +349,72 @@
                         </div>
                     </div>
                 </div>
-            </section>
+            </div>
+        </section>
 
-            <!-- 프로젝트 생성/편집 모달 -->
-            <div class="modal-overlay" id="projectModal" style="display: none;">
-                <div class="modal">
-                    <h3 id="projectModalTitle">새 프로젝트</h3>
-                    <div class="modal-body">
-                        <div class="option-group">
-                            <label for="projectModalName">프로젝트명 *</label>
-                            <input type="text" id="projectModalName" class="text-input" placeholder="예: 3P PDP Builder">
-                        </div>
-                        <div class="option-group">
-                            <label for="projectModalDescription">설명</label>
-                            <textarea id="projectModalDescription" class="text-input" rows="3" placeholder="이 프로젝트의 맥락을 짧게 적어주세요"></textarea>
-                        </div>
-                    </div>
-                    <div class="modal-actions">
-                        <button class="btn-secondary" id="projectModalCancel" type="button">취소</button>
-                        <button class="btn-primary" id="projectModalSave" type="button">저장</button>
+        <!-- 내 컨텍스트 뷰 (개인 글로서리) -->
+        <section class="dashboard-view" id="personalContextView" style="display: none;">
+            <div class="workflow-card dashboard-card">
+                <div class="dashboard-header">
+                    <h3>내 컨텍스트</h3>
+                </div>
+                <div class="context-explain">
+                    <strong>내 컨텍스트</strong>는 모든 회의록 생성에 자동으로 적용되는 개인 용어/표기 모음입니다.
+                    주로 자주 마주치는 인명/팀명 등이 들어갑니다. 회의록을 수정하면 AI가 백그라운드에서 자동으로 학습해 항목을 추가합니다.
+                </div>
+                <div class="context-editor" data-scope="personal">
+                    <div class="dashboard-status" id="personalContextStatus">불러오는 중...</div>
+                    <div class="context-list" id="personalContextList"></div>
+                    <div class="context-add">
+                        <input type="text" class="text-input" data-field="term" placeholder="잘못된/원래 표기">
+                        <input type="text" class="text-input" data-field="correction" placeholder="올바른 표기 / 정의">
+                        <input type="text" class="text-input" data-field="note" placeholder="설명 (선택)">
+                        <button class="btn-primary btn-compact" data-action="add">추가</button>
                     </div>
                 </div>
             </div>
-        </main>
+        </section>
 
-        <!-- 푸터 -->
-        <footer class="footer">
-            <p>Made with Summarying!</p>
-        </footer>
-    </div>
+        <!-- 프로젝트 생성/편집 모달 -->
+        <div class="modal-overlay" id="projectModal" style="display: none;">
+            <div class="modal">
+                <h3 id="projectModalTitle">새 프로젝트</h3>
+                <div class="modal-body">
+                    <div class="option-group">
+                        <label for="projectModalName">프로젝트명 *</label>
+                        <input type="text" id="projectModalName" class="text-input" placeholder="예: 3P PDP Builder">
+                    </div>
+                    <div class="option-group">
+                        <label for="projectModalDescription">설명</label>
+                        <textarea id="projectModalDescription" class="text-input" rows="3" placeholder="이 프로젝트의 맥락을 짧게 적어주세요"></textarea>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-secondary" id="projectModalCancel" type="button">취소</button>
+                    <button class="btn-primary" id="projectModalSave" type="button">저장</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 푸터 -->
+    <footer class="footer">
+        <p>Made with Summarying!</p>
+    </footer>
 
     <!-- Markdown 렌더링 라이브러리 -->
     <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
     <!-- diff 라이브러리 (버전 비교용) -->
     <script src="https://cdn.jsdelivr.net/npm/diff@5.2.0/dist/diff.min.js"></script>
-    <script src="js/app.js"></script>
+    <!-- 앱 스크립트 (전역 공유 — 로드 순서 중요: core가 처음, main이 마지막) -->
+    <script src="js/core.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/upload.js"></script>
+    <script src="js/jobs.js"></script>
+    <script src="js/result.js"></script>
+    <script src="js/dashboard.js"></script>
+    <script src="js/projects.js"></script>
+    <script src="js/main.js"></script>
 </body>
 </html>

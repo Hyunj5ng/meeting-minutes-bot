@@ -15,14 +15,21 @@ AI 기반 회의 음성 파일 → 텍스트 변환(STT) → 회의록 요약 �
 ## 주요 파일
 | 파일 | 역할 |
 |------|------|
-| `api.py` | FastAPI 메인 서버 (엔드포인트 전체) |
+| `api.py` | FastAPI 엔트리포인트 — 앱 생성/정적 서빙만 (`api:app` 유지 필수) |
+| `routers/` | 도메인별 엔드포인트 (auth / usage / transcription / summaries / projects / contexts) |
+| `core/` | 공용 모듈 (config 상수, schemas, services 싱글톤, usage 한도, storage, serializers) |
 | `stt_module.py` | Groq Whisper STT 처리 (청크 분할 포함) |
 | `gpt_summarizer.py` | OpenAI/Claude LLM 요약 모듈 |
 | `models.py` | SQLAlchemy ORM 모델 |
 | `crud.py` | DB CRUD 연산 |
 | `database.py` | DB 연결 설정 |
-| `frontend/js/app.js` | 클라이언트 UI 로직 |
-| `frontend/css/style.css` | 트로피칼 테마 스타일링 |
+| `frontend/js/` | 클라이언트 UI — 역할별 모듈 9개. 전역 공유 방식이라 **로드 순서 중요** (core.js 처음, main.js 마지막 — index.html 참고) |
+| `frontend/css/style.css` | 디자인 시스템 — `:root` 토큰 기반, 티일 단일 브랜드 컬러 |
+
+## UI 디자인 원칙
+- 단일 브랜드 컬러(티일 `--brand-600`) + 중립 배경. 상태 컬러(성공/경고/위험)는 의미가 있을 때만 사용
+- 색/radius/그림자는 `style.css`의 `:root` 토큰만 사용 — 컴포넌트에 새 hex 값 직접 추가 금지
+- 콤팩트 스티키 톱바(로고+네비+사용량+유저) 유지 — 큰 히어로 헤더로 되돌리지 않기
 
 ## 개발 명령어
 ```bash

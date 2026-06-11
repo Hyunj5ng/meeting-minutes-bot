@@ -191,17 +191,6 @@ curl -X POST "http://localhost:8000/summarize" \
 }
 ```
 
-#### 한번에 처리 (레거시)
-
-**POST /transcribe** - STT + 요약을 한번에 수행
-
-```bash
-curl -X POST "http://localhost:8000/transcribe" \
-  -F "file=@meeting.mp3" \
-  -F "gpt_model=gpt-5-mini" \
-  -F "save_files=true"
-```
-
 #### 기타 엔드포인트
 
 | 엔드포인트 | 설명 |
@@ -297,24 +286,47 @@ Dockerfile 기반 배포를 지원하는 서비스(Railway/Render/Fly/Cloud Run)
 
 ```
 meeting-minutes-bot/
-├── api.py                  # FastAPI 웹 서버 (엔드포인트, 비용 계산)
+├── api.py                  # FastAPI 엔트리포인트 (앱 생성, 정적 서빙)
+├── core/                   # 공용 설정/헬퍼
+│   ├── config.py           # 환경변수, 가격표, 한도 등 상수
+│   ├── schemas.py          # Pydantic 요청 모델 + Enum
+│   ├── services.py         # STT/LLM/RAG 클라이언트 싱글톤
+│   ├── usage.py            # 비용 계산 + 사용량/동시성 제한
+│   ├── storage.py          # 업로드 임시 저장 + S3 업로드
+│   └── serializers.py      # 응답 직렬화 헬퍼
+├── routers/                # 엔드포인트 (도메인별)
+│   ├── auth.py             # /auth/*
+│   ├── usage.py            # /usage
+│   ├── transcription.py    # /transcribe-only, /transcribe-merge, /cleanup
+│   ├── summaries.py        # /summarize, /summaries*, /transcripts*, /search/*
+│   ├── projects.py         # /projects*, /me/recent-attendees
+│   └── contexts.py         # /contexts*
 ├── stt_module.py           # Groq Whisper STT 처리 (비동기)
 ├── gpt_summarizer.py       # LLM 요약 모듈 (OpenAI/Claude, 비동기)
+├── rag_service.py          # 과거 회의록 임베딩 검색 (ChromaDB)
+├── context_learner.py      # 회의록 수정 → 컨텍스트 자동 학습
+├── email_service.py        # Resend 이메일 발송
+├── auth.py                 # JWT/Google 토큰 검증 헬퍼
 ├── database.py             # DB 연결 설정 (커넥션 풀)
 ├── models.py               # SQLAlchemy 데이터 모델
 ├── crud.py                 # DB CRUD 함수
-├── migrate_db.py           # DB 마이그레이션 스크립트
+├── alembic/                # DB 마이그레이션
 ├── check_costs.py          # 비용 확인 스크립트
-├── main.py                 # CLI 실행 스크립트
-├── init_db.py              # DB 초기화 스크립트
 ├── requirements.txt        # Python 패키지 목록
 ├── Dockerfile              # 컨테이너 빌드 설정
-├── .dockerignore           # 도커 컨텍스트 제외 목록
-├── .env.example            # 환경변수 예시 파일
-├── frontend/               # 웹 프론트엔드
+├── frontend/               # 웹 프론트엔드 (Vanilla JS)
 │   ├── index.html          # 메인 페이지
-│   ├── css/style.css       # 스타일시트
-│   └── js/app.js           # 클라이언트 JavaScript
+│   ├── css/style.css       # 디자인 시스템 + 스타일
+│   └── js/                 # 역할별 모듈 (전역 공유, 로드 순서 중요)
+│       ├── core.js         # 상수/전역 상태/유틸
+│       ├── api.js          # authFetch + 사용량
+│       ├── auth.js         # Google 로그인/토큰
+│       ├── upload.js       # 파일 선택/참석자 자동완성
+│       ├── jobs.js         # 작업 큐 (동시 3개)
+│       ├── result.js       # 결과/버전/diff/편집
+│       ├── dashboard.js    # 내 회의록 목록
+│       ├── projects.js     # 프로젝트 + 컨텍스트
+│       └── main.js         # 뷰 전환 + 초기화
 ├── uploads/                # 업로드 임시 파일 (자동 생성)
 └── output/                 # 결과 파일 저장 (자동 생성)
 ```

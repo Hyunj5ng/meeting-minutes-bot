@@ -44,3 +44,6 @@ Thumbs.db
 
 # Log files
 *.log
+
+# Claude Code 로컬 설정
+.claude/
