@@ -21,8 +21,13 @@ def serialize_summary_for_list(record) -> dict:
     }
 
 
-def serialize_project(project, summary_count: int = 0, context_count: int = 0) -> dict:
-    return {
+def serialize_project(
+    project,
+    summary_count: int = 0,
+    context_count: int = 0,
+    include_memory: bool = False,
+) -> dict:
+    data = {
         "id": project.id,
         "name": project.name,
         "description": project.description,
@@ -31,6 +36,12 @@ def serialize_project(project, summary_count: int = 0, context_count: int = 0) -
         "summary_count": summary_count,
         "context_count": context_count,
     }
+    if include_memory:
+        data["memory"] = project.memory
+        data["memory_updated_at"] = (
+            project.memory_updated_at.isoformat() if project.memory_updated_at else None
+        )
+    return data
 
 
 def serialize_context_entry(entry) -> dict:
@@ -41,6 +52,7 @@ def serialize_context_entry(entry) -> dict:
         "note": entry.note,
         "project_id": entry.project_id,
         "source": entry.source,
+        "entry_type": entry.entry_type or "term",
         "created_at": entry.created_at.isoformat() if entry.created_at else None,
         "updated_at": entry.updated_at.isoformat() if entry.updated_at else None,
     }

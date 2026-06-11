@@ -118,6 +118,14 @@ function setupEventListeners() {
     const toggleDiffBtn = document.getElementById('toggleDiffBtn');
     if (toggleDiffBtn) toggleDiffBtn.addEventListener('click', toggleDiff);
 
+    // 결과 카드 → 내 회의록 목록 백링크
+    const backToListBtn = document.getElementById('backToListBtn');
+    if (backToListBtn) backToListBtn.addEventListener('click', () => switchView('dashboard'));
+
+    // 프로젝트 AI 메모리 저장
+    const projectMemorySaveBtn = document.getElementById('projectMemorySaveBtn');
+    if (projectMemorySaveBtn) projectMemorySaveBtn.addEventListener('click', saveProjectMemory);
+
     // 프로젝트 생성/편집/삭제
     const newProjectBtn = document.getElementById('newProjectBtn');
     if (newProjectBtn) newProjectBtn.addEventListener('click', () => openProjectModal('create'));
@@ -137,6 +145,15 @@ function setupEventListeners() {
     const projectModal = document.getElementById('projectModal');
     if (projectModal) projectModal.addEventListener('click', (e) => {
         if (e.target === projectModal) closeProjectModal();
+    });
+    // 모달 키보드: Esc 닫기, 프로젝트명 입력에서 Enter 저장
+    document.addEventListener('keydown', (e) => {
+        if (!projectModal || projectModal.style.display === 'none') return;
+        if (e.key === 'Escape') closeProjectModal();
+    });
+    const projectModalName = document.getElementById('projectModalName');
+    if (projectModalName) projectModalName.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); saveProjectModal(); }
     });
 
     // 프로젝트 상세 탭
@@ -173,4 +190,12 @@ function setupEventListeners() {
 
 document.addEventListener('DOMContentLoaded', () => {
     initAuth();
+});
+
+// 처리 중인 작업이 있을 때 페이지 이탈 경고 (작업은 브라우저 메모리에서 진행됨)
+window.addEventListener('beforeunload', (e) => {
+    if (typeof getActiveJobCount === 'function' && getActiveJobCount() > 0) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
 });

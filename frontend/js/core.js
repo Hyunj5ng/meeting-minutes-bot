@@ -174,6 +174,62 @@ function formatFileSize(bytes) {
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 }
 
+// ============================================
+// 토스트 알림 (alert 대체 — 비차단형)
+// ============================================
+
+// type: 'info' | 'success' | 'error'
+// opts: { type, duration(ms, 0이면 수동 닫기만), actionLabel, onAction }
+function showToast(message, opts = {}) {
+    const { type = 'info', duration = 4500, actionLabel = null, onAction = null } = opts;
+
+    let host = document.getElementById('toastHost');
+    if (!host) {
+        host = document.createElement('div');
+        host.id = 'toastHost';
+        host.className = 'toast-host';
+        document.body.appendChild(host);
+    }
+
+    const el = document.createElement('div');
+    el.className = `toast toast-${type}`;
+    el.setAttribute('role', 'status');
+
+    const msg = document.createElement('span');
+    msg.className = 'toast-message';
+    msg.textContent = message;
+    el.appendChild(msg);
+
+    let dismissed = false;
+    const dismiss = () => {
+        if (dismissed) return;
+        dismissed = true;
+        el.classList.add('toast-out');
+        setTimeout(() => el.remove(), 220);
+    };
+
+    if (actionLabel && typeof onAction === 'function') {
+        const actionBtn = document.createElement('button');
+        actionBtn.type = 'button';
+        actionBtn.className = 'toast-action';
+        actionBtn.textContent = actionLabel;
+        actionBtn.addEventListener('click', () => { onAction(); dismiss(); });
+        el.appendChild(actionBtn);
+    }
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'toast-close';
+    closeBtn.setAttribute('aria-label', '닫기');
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', dismiss);
+    el.appendChild(closeBtn);
+
+    host.appendChild(el);
+    if (duration > 0) setTimeout(dismiss, duration);
+    return dismiss;
+}
+
 function getAudioDuration(file) {
     return new Promise((resolve, reject) => {
         const audio = new Audio();

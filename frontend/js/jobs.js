@@ -127,6 +127,7 @@ async function startJob(job) {
         job.progress = 100;
         updateJobCard(job, { status: '회의록 생성 완료!', pct: 100, state: 'done', stage: 'summarize', stageDone: true });
         fetchUsageInfo();
+        announceJobDone(job);
 
         // 자동 이메일 발송 (옵션 켜진 경우)
         if (job.options.autoEmail && job.summaryId) {
@@ -148,6 +149,7 @@ async function startJob(job) {
         job.status = 'failed';
         job.error = error.message || '알 수 없는 오류';
         updateJobCard(job, { status: '실패', state: 'failed', error: job.error });
+        showToast(`"${job.displayName}" 처리에 실패했어요: ${job.error}`, { type: 'error', duration: 8000 });
     } finally {
         refreshJobQueueCount();
         // 슬롯이 비었으니 큐에 대기 중인 다음 작업을 시작
@@ -421,6 +423,29 @@ function removeJobCard(job) {
     refreshJobQueueCount();
 }
 
+// 작업 완료 알림: 한가하면 결과를 바로 펼치고, 아니면 토스트로 안내
+function announceJobDone(job) {
+    const othersBusy = getActiveJobCount() > 0; // 본인은 이미 done이므로 남은 활성 작업만 집계됨
+    const resultVisible = resultSection && resultSection.style.display !== 'none';
+
+    // 사용자가 생성 화면에 있고, 다른 작업/열린 결과가 없으면 바로 보여준다
+    if (currentView === 'create' && !othersBusy && !resultVisible && !isEditMode) {
+        viewJobResult(job);
+        showToast(`"${job.displayName}" 회의록이 완성됐어요.`, { type: 'success' });
+        return;
+    }
+
+    showToast(`"${job.displayName}" 회의록이 완성됐어요.`, {
+        type: 'success',
+        duration: 10000,
+        actionLabel: '결과 보기',
+        onAction: () => {
+            switchView('create');
+            viewJobResult(job);
+        },
+    });
+}
+
 // 완료된 작업을 결과 페이지에 표시
 async function viewJobResult(job) {
     if (job.status !== 'done' || !job.summary) return;
@@ -451,11 +476,11 @@ async function viewJobResult(job) {
 
     const titleEl = document.getElementById('resultTitle');
     if (titleEl) titleEl.textContent = '회의록 생성 완료!';
+    setResultBackLink(false); // 작업 큐에서 연 결과는 목록 백링크 불필요
     showResult(resultData);
     renderVersionBar();
 }
 
-// 토스트 대용 — 일단 alert
 function showJobToast(job, message) {
-    alert(`[${job.displayName}] ${message}`);
+    showToast(`${job.displayName} — ${message}`, { type: 'info', duration: 6000 });
 }

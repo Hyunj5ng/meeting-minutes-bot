@@ -27,11 +27,11 @@ EXTRACTION_MODEL = os.getenv("CONTEXT_EXTRACTION_MODEL", "google/gemini-2.5-flas
 MAX_DIFF_CHARS = 6000
 
 
-EXTRACTION_SYSTEM_PROMPT = """당신은 회의록의 사용자 수정 내역을 분석하여 재사용 가능한 표기/용어 교정을 추출하는 분석가입니다.
+EXTRACTION_SYSTEM_PROMPT = """당신은 회의록의 사용자 수정 내역을 분석하여 (A) 재사용 가능한 표기/용어 교정과 (B) 회의록 스타일 선호를 추출하는 분석가입니다.
 
 입력: AI가 만든 회의록(이전 버전)과 사용자가 직접 고친 회의록(현재 버전)의 라인 단위 diff.
 
-작업: 사용자가 어떤 부분을 어떻게 고쳤는지 보고, 다음 패턴 중 하나에 해당하는 교정만 추출하라.
+== A. 용어 교정 (kind: "term") ==
 
 추출할 패턴:
 1. 인명/고유명사 표기 교정 — STT가 사람 이름을 잘못 인식하여 사용자가 바로잡은 경우.
@@ -46,14 +46,32 @@ EXTRACTION_SYSTEM_PROMPT = """당신은 회의록의 사용자 수정 내역을 
    scope: personal
 
 추출하지 말아야 할 것:
-- 단순 어순 변경, 문장 다듬기, 마크다운 구조 변경
+- 단순 어순 변경, 문장 다듬기
 - 회의에서 한 번만 등장하는 일회성 정보
-- 회의록 섹션 추가/삭제
 - 문법 교정
 
-반환 형식: 아래 JSON 배열만 출력 (다른 설명 금지).
+== B. 스타일 선호 (kind: "style") ==
+
+사용자가 회의록의 구조/형식/문체를 의도적으로 바꾼 패턴. 다음 회의록 작성 시 처음부터 반영할 수 있는 일반화 가능한 규칙만 추출하라.
+
+추출할 패턴 예:
+- 특정 섹션을 표로 변환 (예: 액션 아이템을 표 형식으로 정리)
+- 섹션을 일관되게 추가/삭제 (예: '다음 회의 안건' 섹션 추가, '회의 주제' 섹션 삭제)
+- 불릿 상세도 조정 (예: 긴 문단을 한 줄 불릿으로 압축)
+- 표기 규칙 (예: 날짜를 MM/DD로 통일, 담당자를 굵게 표시)
+
+추출하지 말아야 할 것:
+- 이번 회의에만 해당하는 내용 수정 (정보 추가/삭제)
+- 오타 수정
+- 한 번의 사소한 변경에서 과도하게 일반화하지 마라. 의도가 분명한 변경만.
+
+label은 규칙을 식별하는 짧은 한국어 라벨 (예: "액션아이템-표형식"), rule은 다음 회의록 작성 AI에게 줄 한 문장 지시.
+
+== 반환 형식 ==
+아래 JSON 배열만 출력 (다른 설명 금지). 두 종류를 섞어서 반환 가능.
 [
-  {"scope": "personal" | "project", "term": "잘못된 표기 (이전)", "correction": "올바른 표기 (이후)", "note": "선택적 짧은 설명"}
+  {"kind": "term", "scope": "personal" | "project", "term": "잘못된 표기 (이전)", "correction": "올바른 표기 (이후)", "note": "선택적 짧은 설명"},
+  {"kind": "style", "label": "짧은-라벨", "rule": "다음 회의록 작성 시 적용할 한 문장 지시"}
 ]
 
 확실하지 않으면 추출하지 마라. 빈 배열 []도 정상 응답이다."""
@@ -165,6 +183,22 @@ diff:
     for item in items:
         if not isinstance(item, dict):
             continue
+        kind = item.get("kind") or "term"  # 구버전 응답 호환 (kind 없으면 term)
+
+        if kind == "style":
+            label = (item.get("label") or "").strip()
+            rule = (item.get("rule") or "").strip()
+            if not label or not rule:
+                continue
+            if len(label) > 100 or len(rule) > 300:
+                continue
+            cleaned.append({
+                "kind": "style",
+                "label": label,
+                "rule": rule,
+            })
+            continue
+
         scope = item.get("scope")
         term = (item.get("term") or "").strip()
         correction = (item.get("correction") or "").strip()
@@ -177,6 +211,7 @@ diff:
         if len(term) > 100 or len(correction) > 300:
             continue
         cleaned.append({
+            "kind": "term",
             "scope": scope,
             "term": term,
             "correction": correction,
@@ -191,14 +226,27 @@ def _persist_entries(
     project_id: Optional[int],
     items: List[dict],
 ) -> int:
-    """추출 결과를 ContextEntry로 업서트. 적재된 건수 반환."""
+    """추출 결과를 ContextEntry로 업서트. 적재된 건수 반환.
+    - kind=term → entry_type='term', scope에 따라 personal/project
+    - kind=style → entry_type='style', 항상 personal (스타일은 사용자 전역 선호)"""
     created = 0
     for item in items:
+        if item.get("kind") == "style":
+            entry = crud.upsert_auto_context_entry(
+                db,
+                user_id=user_id,
+                project_id=None,
+                term=item["label"],
+                correction=item["rule"],
+                entry_type="style",
+            )
+            if entry is not None:
+                created += 1
+            continue
+
         scope = item["scope"]
-        target_project_id = project_id if scope == "project" else None
         # 프로젝트 컨텍스트인데 transcript에 project_id가 없으면 → personal로 적재
-        if scope == "project" and target_project_id is None:
-            target_project_id = None  # 결국 personal로 들어감
+        target_project_id = project_id if scope == "project" else None
         entry = crud.upsert_auto_context_entry(
             db,
             user_id=user_id,

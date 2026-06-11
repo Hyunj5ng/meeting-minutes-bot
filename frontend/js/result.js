@@ -21,6 +21,12 @@ function toggleUploadCard() {
 
 // ---- 결과 표시 ----
 
+// 대시보드에서 결과를 열었을 때 "← 내 회의록" 백링크 표시 여부
+function setResultBackLink(visible) {
+    const btn = document.getElementById('backToListBtn');
+    if (btn) btn.hidden = !visible;
+}
+
 function showResult(data) {
     resultSection.style.display = 'block';
 
@@ -77,7 +83,7 @@ async function copyToClipboard() {
         setTimeout(() => { copyBtn.innerHTML = originalHTML; }, 2000);
     } catch (error) {
         console.error('Copy error:', error);
-        alert('복사에 실패했습니다.');
+        showToast('복사에 실패했습니다.', { type: 'error' });
     }
 }
 
@@ -299,7 +305,7 @@ async function saveSummaryEdit() {
 
     const newSummary = document.getElementById('editTextarea').value.trim();
     if (!newSummary) {
-        alert('요약 내용을 입력해주세요.');
+        showToast('요약 내용을 입력해주세요.', { type: 'error' });
         return;
     }
 
@@ -340,9 +346,10 @@ async function saveSummaryEdit() {
         }
 
         cancelEdit();
+        showToast('수정이 저장됐어요. AI가 수정 패턴(용어·스타일)을 백그라운드에서 학습합니다.', { type: 'success', duration: 6000 });
     } catch (error) {
         console.error('Save error:', error);
-        alert('저장 중 오류가 발생했습니다: ' + error.message);
+        showToast('저장 중 오류가 발생했습니다: ' + error.message, { type: 'error' });
     } finally {
         saveBtn.textContent = '저장';
         saveBtn.disabled = false;
@@ -370,10 +377,10 @@ async function sendEmail() {
         }
 
         const data = await res.json();
-        alert(data.message);
+        showToast(data.message, { type: 'success' });
     } catch (error) {
         console.error('Email error:', error);
-        alert('이메일 발송 중 오류가 발생했습니다: ' + error.message);
+        showToast('이메일 발송 중 오류가 발생했습니다: ' + error.message, { type: 'error' });
     } finally {
         btn.innerHTML = originalHTML;
         btn.disabled = false;
@@ -407,6 +414,7 @@ function reset() {
 
     // 결과 숨기기 (작업 큐 카드는 유지 — 다른 진행 중 작업이 있을 수 있음)
     resultSection.style.display = 'none';
+    setResultBackLink(false);
 
     clearFile();
     window.scrollTo({ top: 0, behavior: 'smooth' });

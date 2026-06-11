@@ -51,6 +51,8 @@ class Project(Base):
     )
     name = Column(String(200), nullable=False, comment="프로젝트명")
     description = Column(Text, nullable=True, comment="프로젝트 설명")
+    memory = Column(Text, nullable=True, comment="AI 누적 메모리 (결정사항/진행 주제/인물·역할)")
+    memory_updated_at = Column(DateTime(timezone=True), nullable=True, comment="메모리 갱신 시각")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="생성 시각")
     updated_at = Column(
         DateTime(timezone=True),
@@ -79,6 +81,10 @@ class Project(Base):
 CONTEXT_SOURCE_MANUAL = "manual"
 CONTEXT_SOURCE_AUTO = "auto"
 
+# 컨텍스트 엔트리 type 상수
+CONTEXT_TYPE_TERM = "term"     # 용어/표기 교정 (글로서리)
+CONTEXT_TYPE_STYLE = "style"   # 회의록 스타일 선호 (수정 패턴 학습)
+
 
 class ContextEntry(Base):
     """컨텍스트 글로서리 (개인 또는 프로젝트별 인명/용어 교정)
@@ -103,14 +109,21 @@ class ContextEntry(Base):
         index=True,
         comment="프로젝트 ID (NULL이면 개인 컨텍스트)",
     )
-    term = Column(String(200), nullable=False, comment="용어/표기 (찾는 단서)")
-    correction = Column(String(500), nullable=False, comment="올바른 표기 / 정의")
+    term = Column(String(200), nullable=False, comment="용어/표기 (찾는 단서) — style 타입은 규칙 라벨")
+    correction = Column(String(500), nullable=False, comment="올바른 표기 / 정의 — style 타입은 규칙 본문")
     note = Column(Text, nullable=True, comment="부가 설명")
     source = Column(
         String(20),
         nullable=False,
         default=CONTEXT_SOURCE_MANUAL,
         comment="manual | auto (자동 추출본인지)",
+    )
+    entry_type = Column(
+        String(20),
+        nullable=False,
+        default=CONTEXT_TYPE_TERM,
+        server_default=CONTEXT_TYPE_TERM,
+        comment="term (용어 교정) | style (스타일 선호)",
     )
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="생성 시각")
     updated_at = Column(

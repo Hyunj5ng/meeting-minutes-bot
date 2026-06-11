@@ -17,6 +17,8 @@ from models import (
     VERSION_SOURCE_USER_EDIT,
     CONTEXT_SOURCE_MANUAL,
     CONTEXT_SOURCE_AUTO,
+    CONTEXT_TYPE_TERM,
+    CONTEXT_TYPE_STYLE,
 )
 from typing import List, Optional
 
@@ -491,8 +493,9 @@ def update_project(
     user_id: int,
     name: Optional[str] = None,
     description: Optional[str] = None,
+    memory: Optional[str] = None,
 ) -> Optional[Project]:
-    """프로젝트 수정 (소유권 확인)"""
+    """프로젝트 수정 (소유권 확인). memory를 넘기면 AI 메모리도 갱신한다."""
     project = get_project(db, project_id, user_id)
     if not project:
         return None
@@ -500,6 +503,26 @@ def update_project(
         project.name = name.strip()
     if description is not None:
         project.description = description or None
+    if memory is not None:
+        project.memory = memory.strip() or None
+        project.memory_updated_at = sa_func.now()
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+def set_project_memory(
+    db: Session,
+    project_id: int,
+    user_id: int,
+    memory: str,
+) -> Optional[Project]:
+    """프로젝트 AI 메모리 갱신 (백그라운드 학습 작업용)"""
+    project = get_project(db, project_id, user_id)
+    if not project:
+        return None
+    project.memory = (memory or "").strip() or None
+    project.memory_updated_at = sa_func.now()
     db.commit()
     db.refresh(project)
     return project
@@ -539,6 +562,7 @@ def create_context_entry(
     project_id: Optional[int] = None,
     note: Optional[str] = None,
     source: str = CONTEXT_SOURCE_MANUAL,
+    entry_type: str = CONTEXT_TYPE_TERM,
 ) -> Optional[ContextEntry]:
     """컨텍스트 엔트리 생성.
     project_id가 지정된 경우 해당 프로젝트가 user 소유인지 확인."""
@@ -554,6 +578,7 @@ def create_context_entry(
         correction=correction.strip(),
         note=(note or "").strip() or None,
         source=source,
+        entry_type=entry_type,
     )
     db.add(entry)
     db.commit()
@@ -574,11 +599,13 @@ def list_context_entries(
     user_id: int,
     scope: str = "personal",
     project_id: Optional[int] = None,
+    entry_type: Optional[str] = None,
 ) -> List[ContextEntry]:
     """컨텍스트 엔트리 목록.
     scope='personal' → project_id IS NULL
     scope='project' → project_id == 지정값 (소유권 검증 후)
     scope='all' → user의 모든 엔트리
+    entry_type=None → 전체, 'term'/'style' → 해당 타입만
     """
     q = db.query(ContextEntry).filter(ContextEntry.user_id == user_id)
     if scope == "personal":
@@ -591,6 +618,8 @@ def list_context_entries(
             return []
         q = q.filter(ContextEntry.project_id == project_id)
     # 'all'은 추가 필터 없음
+    if entry_type is not None:
+        q = q.filter(ContextEntry.entry_type == entry_type)
     return q.order_by(ContextEntry.updated_at.desc()).all()
 
 
@@ -634,18 +663,24 @@ def find_context_entry_by_term(
     user_id: int,
     project_id: Optional[int],
     term: str,
+    entry_type: str = CONTEXT_TYPE_TERM,
 ) -> Optional[ContextEntry]:
     """동일 term의 엔트리 조회 (자동 추출 시 중복 방지용).
     project_id IS NULL과 NOT NULL을 명시적으로 구분한다."""
     q = db.query(ContextEntry).filter(
         ContextEntry.user_id == user_id,
         ContextEntry.term == term,
+        ContextEntry.entry_type == entry_type,
     )
     if project_id is None:
         q = q.filter(ContextEntry.project_id.is_(None))
     else:
         q = q.filter(ContextEntry.project_id == project_id)
     return q.first()
+
+
+# 자동 학습 스타일 규칙 상한 (노이즈 누적 방지)
+MAX_AUTO_STYLE_RULES = 20
 
 
 def upsert_auto_context_entry(
@@ -655,17 +690,19 @@ def upsert_auto_context_entry(
     term: str,
     correction: str,
     note: Optional[str] = None,
+    entry_type: str = CONTEXT_TYPE_TERM,
 ) -> Optional[ContextEntry]:
     """자동 추출용 업서트.
     - 동일 term이 있으면: 사용자가 수정한 manual 엔트리는 건드리지 않음 (덮어쓰지 않음).
       auto 엔트리이고 correction이 다르면 갱신.
-    - 없으면: source='auto'로 신규 생성."""
+    - 없으면: source='auto'로 신규 생성.
+    - style 타입은 상한(MAX_AUTO_STYLE_RULES) 초과 시 가장 오래된 auto 항목을 교체."""
     term = (term or "").strip()
     correction = (correction or "").strip()
     if not term or not correction:
         return None
 
-    existing = find_context_entry_by_term(db, user_id, project_id, term)
+    existing = find_context_entry_by_term(db, user_id, project_id, term, entry_type=entry_type)
     if existing:
         if existing.source == CONTEXT_SOURCE_MANUAL:
             # 사용자 검증된 항목은 덮어쓰지 않음
@@ -679,6 +716,16 @@ def upsert_auto_context_entry(
             db.refresh(existing)
         return existing
 
+    # 스타일 규칙 상한: 초과분은 가장 오래된 auto 항목부터 제거
+    if entry_type == CONTEXT_TYPE_STYLE:
+        auto_styles = db.query(ContextEntry).filter(
+            ContextEntry.user_id == user_id,
+            ContextEntry.entry_type == CONTEXT_TYPE_STYLE,
+            ContextEntry.source == CONTEXT_SOURCE_AUTO,
+        ).order_by(ContextEntry.updated_at.asc()).all()
+        while len(auto_styles) >= MAX_AUTO_STYLE_RULES:
+            db.delete(auto_styles.pop(0))
+
     return create_context_entry(
         db,
         user_id=user_id,
@@ -687,6 +734,7 @@ def upsert_auto_context_entry(
         project_id=project_id,
         note=note,
         source=CONTEXT_SOURCE_AUTO,
+        entry_type=entry_type,
     )
 
 

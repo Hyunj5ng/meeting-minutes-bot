@@ -85,8 +85,12 @@ class RAGService:
         user_id: int,
         query_text: str,
         n_results: int = MAX_CONTEXT_RESULTS,
+        project_name: Optional[str] = None,
     ) -> list[str]:
-        """관련 과거 요약을 검색하여 반환"""
+        """관련 과거 요약을 검색하여 반환.
+
+        project_name이 주어지면 같은 프로젝트의 회의록을 우선 검색하고,
+        모자라면 전체에서 보충한다 (같은 프로젝트 회의가 맥락상 가장 관련 깊음)."""
         if not self.openai_client:
             return []
 
@@ -96,14 +100,49 @@ class RAGService:
                 return []
 
             query_embedding = await self._get_embedding(query_text)
+            max_n = min(n_results, collection.count())
 
-            results = collection.query(
-                query_embeddings=[query_embedding],
-                n_results=min(n_results, collection.count()),
-            )
+            seen_ids: set[str] = set()
+            documents: list[str] = []
 
-            documents = results.get("documents", [[]])[0]
-            return [doc[:MAX_SUMMARY_LENGTH] for doc in documents if doc]
+            def _collect(results):
+                ids = results.get("ids", [[]])[0]
+                docs = results.get("documents", [[]])[0]
+                for doc_id, doc in zip(ids, docs):
+                    if doc and doc_id not in seen_ids and len(documents) < n_results:
+                        seen_ids.add(doc_id)
+                        documents.append(doc[:MAX_SUMMARY_LENGTH])
+
+            # 1차: 같은 프로젝트 우선
+            if project_name:
+                try:
+                    project_results = collection.query(
+                        query_embeddings=[query_embedding],
+                        n_results=max_n,
+                        where={"project_name": project_name},
+                    )
+                    _collect(project_results)
+                except Exception as e:
+                    print(f"RAG 프로젝트 필터 검색 실패 (전체 검색으로 진행): {e}")
+
+            # 2차: 전체에서 보충
+            if len(documents) < n_results:
+                results = collection.query(
+                    query_embeddings=[query_embedding],
+                    n_results=max_n,
+                )
+                _collect(results)
+
+            return documents
         except Exception as e:
             print(f"RAG 검색 실패: {e}")
             return []
+
+    def delete_summary(self, user_id: int, summary_id: int):
+        """요약 삭제 시 임베딩도 제거 (회의록 삭제와 동기화)"""
+        try:
+            collection = self._get_collection(user_id)
+            collection.delete(ids=[f"summary_{summary_id}"])
+            print(f"RAG 삭제 완료: user={user_id}, summary={summary_id}")
+        except Exception as e:
+            print(f"RAG 삭제 실패 (무시): {e}")

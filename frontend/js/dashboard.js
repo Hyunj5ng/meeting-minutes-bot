@@ -56,14 +56,44 @@ function renderDashboardList(records) {
             <div class="dashboard-item-title">
                 ${escapeHtml(title)}
                 ${editedBadge}
+                <button type="button" class="dashboard-item-delete" title="이 회의록 삭제" aria-label="삭제">
+                    <svg width="15" height="15" viewBox="0 0 20 20" fill="none">
+                        <path d="M4 6h12M8 6V4.5C8 4.22 8.22 4 8.5 4h3c.28 0 .5.22.5.5V6m2 0v9.5c0 .28-.22.5-.5.5h-7a.5.5 0 01-.5-.5V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
             </div>
             <div class="dashboard-item-meta">${metaChips.join('')}</div>
             <div class="dashboard-item-preview">${escapeHtml(rec.summary_preview || '')}</div>
         `;
 
         item.addEventListener('click', () => openSummaryFromDashboard(rec.id));
+        item.querySelector('.dashboard-item-delete').addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteSummaryFromDashboard(rec.id, title, item);
+        });
         listEl.appendChild(item);
     });
+}
+
+// 대시보드에서 회의록 삭제 (버전 이력 + 검색 임베딩까지 함께 정리됨)
+async function deleteSummaryFromDashboard(summaryId, title, itemEl) {
+    if (!confirm(`"${title}" 회의록을 삭제할까요?\n버전 이력까지 함께 삭제되며 되돌릴 수 없습니다.`)) return;
+    try {
+        const res = await authFetch(`${API_BASE_URL}/summaries/${summaryId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('삭제 실패');
+        itemEl.remove();
+        // 총 건수 갱신
+        const statusEl = document.getElementById('dashboardStatus');
+        const listEl = document.getElementById('dashboardList');
+        if (statusEl && listEl) {
+            const remain = listEl.children.length;
+            statusEl.textContent = remain > 0 ? `총 ${remain}건` : '아직 회의록이 없습니다. 첫 회의록을 만들어보세요!';
+        }
+        showToast('회의록을 삭제했어요.', { type: 'success' });
+    } catch (err) {
+        console.error(err);
+        showToast('삭제 중 오류: ' + err.message, { type: 'error' });
+    }
 }
 
 // 대시보드에서 항목 클릭 → 생성 뷰로 전환하여 결과 카드 표시
@@ -106,10 +136,11 @@ async function openSummaryFromDashboard(summaryId) {
             titleEl.textContent = record.meeting_title || record.filename || '회의록';
         }
 
+        setResultBackLink(true); // 목록에서 왔으니 돌아가는 길을 보여준다
         showResult(resultData);
         renderVersionBar();
     } catch (err) {
         console.error(err);
-        alert('회의록을 여는 데 실패했습니다: ' + err.message);
+        showToast('회의록을 여는 데 실패했습니다: ' + err.message, { type: 'error' });
     }
 }

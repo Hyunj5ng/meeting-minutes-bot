@@ -39,6 +39,12 @@ SYSTEM_PROMPT = """당신은 전문적인 회의록 작성 비서입니다.
 - 반드시 아래 4개 섹션을 모두 포함하세요. 어떤 섹션도 생략하지 마세요.
 - 한국어로 작성하세요.
 
+화자 구분 원칙 (참석자 목록이 주어진 경우):
+- STT 원문에는 화자 표시가 없습니다. 발언 내용("제가 ~할게요", "OO님 의견은?"), 호명, 담당 업무, 프로젝트 맥락의 인물 정보를 단서로 누가 한 말인지 최대한 추론하세요.
+- 주요 의견·결정·약속은 "(이름)" 형태로 화자를 명시하세요. 예) - 베타 출시는 6/17로 확정 (현종)
+- 확신이 없으면 이름 뒤에 "(추정)"을 붙이고, 단서가 전혀 없으면 화자 표기를 생략하세요. 틀린 귀속보다 생략이 낫습니다.
+- 액션 아이템의 담당자는 발언 맥락에서 최대한 찾아 채우세요.
+
 마크다운 서식 규칙 (Notion 호환 — 반드시 준수):
 - 최상위 섹션은 "## " (h2)로 표기합니다. 예: ## 회의 주제
 - 섹션 내부의 주제/소단원은 "### " (h3)로 표기합니다. 볼드 불릿(`- **제목**`)으로 대신하지 마세요.
@@ -94,7 +100,8 @@ class GPTSummarizer:
             self.client = None
             print("경고: OPENROUTER_API_KEY가 설정되지 않았습니다.")
 
-    async def summarize(self, text, model="gpt-5-mini", context=None, past_context=None, glossary=None):
+    async def summarize(self, text, model="gpt-5-mini", context=None, past_context=None, glossary=None,
+                        project_memory=None, style_rules=None):
         """
         회의 내용을 LLM을 사용하여 정리된 회의록으로 변환합니다.
 
@@ -105,6 +112,8 @@ class GPTSummarizer:
             past_context: RAG로 검색된 과거 회의록 요약 리스트
             glossary: 컨텍스트 글로서리 리스트 [{term, correction, note}]
                       개인+프로젝트 컨텍스트 통합본. STT 오타/표기 교정에 사용.
+            project_memory: 프로젝트 누적 메모리 (결정사항/진행 주제/인물·역할)
+            style_rules: 사용자 스타일 선호 문자열 리스트 (수정 패턴에서 학습됨)
 
         Returns:
             dict: {"summary": str, "input_tokens": int, "output_tokens": int}
@@ -116,7 +125,7 @@ class GPTSummarizer:
         router_model = MODEL_MAP.get(model, model)
         print(f"OpenRouter ({router_model})을 사용하여 회의록 작성 중...")
 
-        prompt = self._get_prompt(text, context, past_context, glossary)
+        prompt = self._get_prompt(text, context, past_context, glossary, project_memory, style_rules)
 
         response = await self.client.chat.completions.create(
             model=router_model,
@@ -140,7 +149,8 @@ class GPTSummarizer:
             "output_tokens": output_tokens
         }
 
-    def _get_prompt(self, text, context=None, past_context=None, glossary=None):
+    def _get_prompt(self, text, context=None, past_context=None, glossary=None,
+                    project_memory=None, style_rules=None):
         """공통 프롬프트 생성"""
         # 맥락 정보가 있으면 프롬프트 상단에 삽입
         context_section = ""
@@ -180,6 +190,27 @@ class GPTSummarizer:
                     + "\n\n"
                 )
 
+        # 프로젝트 누적 메모리 — 회의가 쌓일수록 깊어지는 장기 기억
+        memory_section = ""
+        if project_memory and project_memory.strip():
+            memory_section = (
+                "프로젝트 누적 메모리 (이 프로젝트에서 지금까지 합의/논의된 내용의 요약):\n"
+                + project_memory.strip()
+                + "\n\n위 메모리를 활용하세요: 등장 인물의 역할로 화자를 추론하고, 과거 결정사항과 이어지는 논의는 그 맥락을 반영하며, "
+                "이전 결정이 뒤집히면 변경되었음을 명시하세요. 단, 이번 회의에서 언급되지 않은 메모리 내용을 회의록에 끼워 넣지는 마세요.\n\n"
+            )
+
+        # 사용자 스타일 선호 — 과거 수정 패턴에서 학습됨
+        style_section = ""
+        if style_rules:
+            rules = [r.strip() for r in style_rules if r and r.strip()]
+            if rules:
+                style_section = (
+                    "사용자 회의록 스타일 선호 (과거 수정 패턴에서 학습됨 — 형식 충돌 시 시스템 프롬프트의 섹션 구조는 유지하되 그 안에서 반영):\n"
+                    + "\n".join(f"- {r}" for r in rules)
+                    + "\n\n"
+                )
+
         # RAG: 과거 회의록 맥락 삽입
         past_context_section = ""
         if past_context:
@@ -192,7 +223,7 @@ class GPTSummarizer:
                 + "\n\n위 과거 회의 내용을 참고하여, 연속성 있는 맥락으로 이번 회의록을 작성해주세요.\n\n"
             )
 
-        return f"""{context_section}{glossary_section}{past_context_section}아래는 회의 중 녹음된 음성을 텍스트로 변환한 내용입니다. 시스템 프롬프트의 출력 형식에 맞춰 회의록을 작성해주세요.
+        return f"""{context_section}{memory_section}{glossary_section}{style_section}{past_context_section}아래는 회의 중 녹음된 음성을 텍스트로 변환한 내용입니다. 시스템 프롬프트의 출력 형식에 맞춰 회의록을 작성해주세요.
 
 **중요 지침:**
 - 원본 텍스트에 포함된 세부 논의 내용, 구체적인 사례, 수치, 의견 등을 빠뜨리지 마세요.

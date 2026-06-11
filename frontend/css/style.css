@@ -1795,6 +1795,244 @@ button {
 }
 
 /* ============================================
+   토스트 알림
+   ============================================ */
+.toast-host {
+    position: fixed;
+    bottom: 1.25rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    z-index: 2000;
+    width: min(92vw, 480px);
+    pointer-events: none;
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    width: 100%;
+    background: var(--text-strong);
+    color: white;
+    border-radius: var(--radius-md);
+    padding: 0.7rem 0.9rem;
+    box-shadow: var(--shadow-lg);
+    font-size: 0.875rem;
+    line-height: 1.45;
+    animation: toastIn 0.22s ease;
+    pointer-events: auto;
+}
+
+.toast-success {
+    background: var(--brand-700);
+}
+
+.toast-error {
+    background: #B91C1C;
+}
+
+.toast-message {
+    flex: 1;
+    word-break: break-word;
+}
+
+.toast-action {
+    flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    color: white;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    padding: 0.3rem 0.75rem;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.toast-action:hover {
+    background: rgba(255, 255, 255, 0.28);
+}
+
+.toast-close {
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0.1rem 0.25rem;
+}
+
+.toast-close:hover {
+    color: white;
+}
+
+.toast-out {
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+@keyframes toastIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ============================================
+   추가 UX 컴포넌트
+   ============================================ */
+
+/* 파일 선택 후 드롭존 콤팩트 모드 (추가용) */
+.upload-area.has-files {
+    padding: 0.875rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.875rem;
+    flex-wrap: wrap;
+}
+
+.upload-area.has-files .upload-icon {
+    display: none;
+}
+
+.upload-area.has-files h4 {
+    margin-bottom: 0;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+.upload-area.has-files p {
+    display: none;
+}
+
+.upload-area.has-files .btn-browse {
+    padding: 0.4rem 0.9rem;
+    font-size: 0.8125rem;
+}
+
+/* 결과 헤더 백링크 */
+.result-header-title .btn-link {
+    padding-left: 0;
+    margin-bottom: 0.125rem;
+}
+
+/* 대시보드 아이템 삭제 버튼 (hover 시 노출) */
+.dashboard-item-title .dashboard-item-delete {
+    margin-left: auto;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    opacity: 0;
+    transition: all 0.15s ease;
+}
+
+.dashboard-item:hover .dashboard-item-delete {
+    opacity: 1;
+}
+
+.dashboard-item-delete:hover {
+    color: var(--danger);
+    background: var(--danger-bg);
+}
+
+/* 터치 기기는 hover가 없으므로 항상 노출 */
+@media (hover: none) {
+    .dashboard-item-title .dashboard-item-delete {
+        opacity: 1;
+    }
+}
+
+/* AI 학습 스타일 규칙 목록 */
+.style-rules {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--border-strong);
+}
+
+.style-rules-title {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--text-strong);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.25rem;
+}
+
+.style-rules-hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 0.625rem;
+}
+
+.style-rules-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+}
+
+.style-rule-row {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.55rem 0.7rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
+.style-rule-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.style-rule-label {
+    flex-shrink: 0;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    background: var(--brand-100);
+    color: var(--brand-800);
+}
+
+.style-rule-text {
+    font-size: 0.8125rem;
+    color: var(--text);
+}
+
+/* 프로젝트 AI 메모리 */
+.memory-textarea {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    resize: vertical;
+    min-height: 260px;
+}
+
+/* ============================================
    푸터
    ============================================ */
 .footer {

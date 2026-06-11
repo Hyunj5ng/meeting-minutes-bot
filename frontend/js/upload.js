@@ -42,7 +42,7 @@ async function handleFiles(fileList) {
         return !allowedExtensions.includes(ext);
     });
     if (invalid.length) {
-        alert(`지원하지 않는 파일 형식입니다.\n지원 형식: MP3, WAV, M4A, OGG, FLAC, AAC\n\n제외: ${invalid.map(f => f.name).join(', ')}`);
+        showToast(`지원하지 않는 파일 형식이 제외됐어요: ${invalid.map(f => f.name).join(', ')} (지원: MP3, WAV, M4A, OGG, FLAC, AAC)`, { type: 'error', duration: 7000 });
     }
     const valid = incoming.filter(f => !invalid.includes(f));
     if (!valid.length) return;
@@ -60,7 +60,7 @@ async function handleFiles(fileList) {
 
     // 합치기 모드는 최대 10개 (백엔드와 동기화)
     if (selectedFiles.length > 10) {
-        alert('한 번에 처리 가능한 파일은 최대 10개입니다.');
+        showToast('한 번에 처리 가능한 파일은 최대 10개입니다.', { type: 'error' });
         selectedFiles = selectedFiles.slice(0, 10);
         fileMetas = fileMetas.slice(0, 10);
     }
@@ -83,11 +83,18 @@ function renderFileList() {
 
     if (selectedFiles.length === 0) {
         listEl.style.display = 'none';
-        if (uploadArea) uploadArea.style.display = 'block';
+        if (uploadArea) {
+            uploadArea.style.display = 'block';
+            uploadArea.classList.remove('has-files');
+        }
         return;
     }
 
-    if (uploadArea) uploadArea.style.display = 'block';
+    // 파일이 선택되면 드롭존은 "추가용" 콤팩트 모드로 축소
+    if (uploadArea) {
+        uploadArea.style.display = 'block';
+        uploadArea.classList.add('has-files');
+    }
     listEl.style.display = 'block';
     countEl.textContent = String(selectedFiles.length);
     itemsEl.innerHTML = '';
@@ -175,7 +182,10 @@ function clearFile() {
     audioDurations = [];
     fileMetas = [];
     if (fileInput) fileInput.value = '';
-    if (uploadArea) uploadArea.style.display = 'block';
+    if (uploadArea) {
+        uploadArea.style.display = 'block';
+        uploadArea.classList.remove('has-files');
+    }
     const listEl = document.getElementById('fileInfoList');
     if (listEl) listEl.style.display = 'none';
     if (convertBtn) convertBtn.disabled = true;

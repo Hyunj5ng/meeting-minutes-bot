@@ -19,12 +19,21 @@ AI 기반 회의 음성 파일 → 텍스트 변환(STT) → 회의록 요약 �
 | `routers/` | 도메인별 엔드포인트 (auth / usage / transcription / summaries / projects / contexts) |
 | `core/` | 공용 모듈 (config 상수, schemas, services 싱글톤, usage 한도, storage, serializers) |
 | `stt_module.py` | Groq Whisper STT 처리 (청크 분할 포함) |
-| `gpt_summarizer.py` | OpenAI/Claude LLM 요약 모듈 |
+| `gpt_summarizer.py` | OpenAI/Claude LLM 요약 모듈 (프로젝트 메모리·글로서리·스타일 규칙 주입) |
+| `project_memory.py` | 프로젝트 누적 메모리 — 회의록 생성마다 백그라운드 LLM 갱신 |
+| `context_learner.py` | 회의록 수정 diff → 용어 교정('term') + 스타일 선호('style') 자동 학습 |
+| `rag_service.py` | 과거 회의록 임베딩 검색 (같은 프로젝트 우선, ChromaDB) |
 | `models.py` | SQLAlchemy ORM 모델 |
 | `crud.py` | DB CRUD 연산 |
 | `database.py` | DB 연결 설정 |
 | `frontend/js/` | 클라이언트 UI — 역할별 모듈 9개. 전역 공유 방식이라 **로드 순서 중요** (core.js 처음, main.js 마지막 — index.html 참고) |
 | `frontend/css/style.css` | 디자인 시스템 — `:root` 토큰 기반, 티일 단일 브랜드 컬러 |
+
+## 학습 시스템 (쓸수록 똑똑해지는 구조)
+- **프로젝트 메모리**: `/summarize` 성공 → BackgroundTask로 `project_memory.run_memory_update` → `projects.memory` 갱신 → 다음 요약 프롬프트에 주입
+- **수정 학습**: `PUT /summaries/{id}` → `context_learner.run_learning_task` → diff에서 용어('term')/스타일('style') 추출 → `context_entries`에 source='auto'로 적재
+- 사용자가 직접 수정한(manual) 엔트리는 자동 학습이 절대 덮어쓰지 않음
+- UI 알림은 alert() 금지 — `showToast()` (core.js) 사용
 
 ## UI 디자인 원칙
 - 단일 브랜드 컬러(티일 `--brand-600`) + 중립 배경. 상태 컬러(성공/경고/위험)는 의미가 있을 때만 사용

@@ -107,6 +107,7 @@ async def get_project_detail(
             project,
             summary_count=len(summaries),
             context_count=len(contexts),
+            include_memory=True,
         ),
         "summaries": [serialize_summary_for_list(r) for r in summaries],
         "contexts": [serialize_context_entry(c) for c in contexts],
@@ -120,17 +121,18 @@ async def update_project(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """프로젝트 정보 수정"""
+    """프로젝트 정보 수정 (name/description/memory — 넘긴 필드만 갱신)"""
     project = crud.update_project(
         db,
         project_id=project_id,
         user_id=current_user.id,
         name=body.name,
         description=body.description,
+        memory=body.memory,
     )
     if not project:
         raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
-    return {"success": True, "project": serialize_project(project)}
+    return {"success": True, "project": serialize_project(project, include_memory=True)}
 
 
 @router.delete("/projects/{project_id}")

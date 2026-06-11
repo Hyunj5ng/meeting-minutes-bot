@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 import context_learner
 import crud
+import project_memory
 from auth import get_current_user
 from core import services
 from core.config import OUTPUT_DIR
@@ -29,6 +30,7 @@ router = APIRouter(tags=["summaries"])
 
 @router.post("/summarize")
 async def summarize_transcript(
+    background_tasks: BackgroundTasks,
     transcript_id: int = Form(..., description="Transcript 레코드 ID"),
     gpt_model: LLMModel = Form(LLMModel.CLAUDE_SONNET_46, description="사용할 LLM 모델 선택"),
     save_files: bool = Form(True, description="결과 파일을 서버에 저장할지 여부"),
@@ -36,7 +38,10 @@ async def summarize_transcript(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """텍스트를 LLM으로 요약하여 회의록 생성 및 새 SummaryRecord 생성"""
+    """텍스트를 LLM으로 요약하여 회의록 생성 및 새 SummaryRecord 생성.
+
+    학습 루프: 프로젝트 메모리 주입 → 요약 → 백그라운드로 메모리 갱신.
+    회의가 쌓일수록 프로젝트 맥락을 더 잘 기억하게 된다."""
 
     transcript_record = crud.get_transcript_record(db, transcript_id, current_user.id)
     if not transcript_record:
@@ -57,12 +62,12 @@ async def summarize_transcript(
     if transcript_record.keywords:
         context["keywords"] = transcript_record.keywords
 
-    # 글로서리 구성: 개인 컨텍스트 + (해당 프로젝트의 컨텍스트가 있다면)
-    personal_entries = crud.list_context_entries(db, current_user.id, scope="personal")
+    # 글로서리(용어 교정) 구성: 개인 컨텍스트 + (해당 프로젝트의 컨텍스트가 있다면)
+    personal_entries = crud.list_context_entries(db, current_user.id, scope="personal", entry_type="term")
     project_entries = []
     if transcript_record.project_id:
         project_entries = crud.list_context_entries(
-            db, current_user.id, scope="project", project_id=transcript_record.project_id
+            db, current_user.id, scope="project", project_id=transcript_record.project_id, entry_type="term"
         )
     # 프로젝트 컨텍스트가 개인 컨텍스트보다 우선 (충돌 시 프로젝트 본을 신뢰)
     glossary = [
@@ -72,14 +77,27 @@ async def summarize_transcript(
     if glossary:
         print(f"글로서리 적용: 개인 {len(personal_entries)}건 + 프로젝트 {len(project_entries)}건")
 
+    # 스타일 선호 (수정 패턴에서 학습된 규칙)
+    style_entries = crud.list_context_entries(db, current_user.id, scope="all", entry_type="style")
+    style_rules = [e.correction for e in style_entries]
+    if style_rules:
+        print(f"스타일 규칙 적용: {len(style_rules)}건")
+
+    # 프로젝트 누적 메모리
+    proj = transcript_record.project
+    proj_memory = proj.memory if proj else None
+    if proj_memory:
+        print(f"프로젝트 메모리 주입: {len(proj_memory)}자")
+
     try:
-        # RAG: 과거 관련 회의록 검색
+        # RAG: 과거 관련 회의록 검색 (같은 프로젝트 우선)
         past_context = []
         if services.rag_service:
             try:
                 past_context = await services.rag_service.retrieve_context(
                     user_id=current_user.id,
                     query_text=transcript[:2000],
+                    project_name=transcript_record.project_name,
                 )
                 if past_context:
                     print(f"RAG: 과거 회의록 {len(past_context)}개 검색됨")
@@ -92,6 +110,8 @@ async def summarize_transcript(
             transcript, model=gpt_model.value, context=context or None,
             past_context=past_context or None,
             glossary=glossary or None,
+            project_memory=proj_memory,
+            style_rules=style_rules or None,
         )
         gpt_time = time.time() - start_time
 
@@ -129,6 +149,17 @@ async def summarize_transcript(
                 )
             except Exception as e:
                 print(f"RAG 저장 실패 (무시): {e}")
+
+        # 프로젝트 누적 메모리 갱신 (백그라운드 — 응답 지연 없음)
+        if transcript_record.project_id:
+            background_tasks.add_task(
+                project_memory.run_memory_update,
+                project_id=transcript_record.project_id,
+                user_id=current_user.id,
+                new_summary=summary,
+                meeting_title=transcript_record.meeting_title,
+                meeting_date=transcript_record.created_at.strftime("%Y-%m-%d") if transcript_record.created_at else None,
+            )
 
         # 파일 저장 또는 응답 준비
         summary_path = os.path.join(OUTPUT_DIR, f"meeting_minutes_{timestamp}_{unique_id}.txt")
@@ -327,6 +358,24 @@ async def update_summary(
         "version_count": version_count,
         "latest_version_no": version_count,
     }
+
+
+@router.delete("/summaries/{summary_id}")
+async def delete_summary(
+    summary_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """요약 레코드 삭제 (소유권 확인). 버전 이력과 RAG 임베딩도 함께 정리된다."""
+    ok = crud.delete_summary_record(db, summary_id, current_user.id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Summary 레코드를 찾을 수 없습니다")
+
+    # RAG 임베딩 동기 정리 (실패해도 무시 — 검색에 노이즈만 남음)
+    if services.rag_service:
+        services.rag_service.delete_summary(current_user.id, summary_id)
+
+    return {"success": True}
 
 
 @router.get("/summaries/{summary_id}/versions")

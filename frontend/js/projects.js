@@ -63,13 +63,14 @@ async function openProjectDetail(projectId) {
 
         renderProjectMeetings(data.summaries || []);
         renderContextList('project', data.contexts || []);
+        renderProjectMemory(data.project);
 
         // 첫 탭(회의록)으로 초기화
         switchProjectTab('meetings');
         switchView('projectDetail');
     } catch (err) {
         console.error(err);
-        alert('프로젝트를 여는 데 실패했습니다: ' + err.message);
+        showToast('프로젝트를 여는 데 실패했습니다: ' + err.message, { type: 'error' });
     }
 }
 
@@ -114,8 +115,57 @@ function switchProjectTab(tabName) {
     });
     const meetTab = document.getElementById('projectMeetingsTab');
     const ctxTab = document.getElementById('projectContextTab');
+    const memTab = document.getElementById('projectMemoryTab');
     if (meetTab) meetTab.classList.toggle('active', tabName === 'meetings');
     if (ctxTab) ctxTab.classList.toggle('active', tabName === 'context');
+    if (memTab) memTab.classList.toggle('active', tabName === 'memory');
+}
+
+// ============================================
+// 프로젝트 AI 메모리 (회의가 쌓일수록 깊어지는 장기 기억)
+// ============================================
+
+function renderProjectMemory(project) {
+    const textarea = document.getElementById('projectMemoryText');
+    const statusEl = document.getElementById('projectMemoryStatus');
+    if (!textarea) return;
+
+    textarea.value = project.memory || '';
+    if (statusEl) {
+        if (project.memory && project.memory_updated_at) {
+            statusEl.textContent = `마지막 갱신: ${formatDateKo(project.memory_updated_at)} — 회의록이 생성될 때마다 자동으로 갱신됩니다.`;
+        } else if (project.memory) {
+            statusEl.textContent = '회의록이 생성될 때마다 자동으로 갱신됩니다.';
+        } else {
+            statusEl.textContent = '아직 메모리가 없습니다. 이 프로젝트로 회의록을 만들면 AI가 자동으로 쌓기 시작해요.';
+        }
+    }
+}
+
+async function saveProjectMemory() {
+    if (!currentProjectDetail) return;
+    const textarea = document.getElementById('projectMemoryText');
+    const saveBtn = document.getElementById('projectMemorySaveBtn');
+    if (!textarea) return;
+
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '저장 중...'; }
+    try {
+        const res = await authFetch(`${API_BASE_URL}/projects/${currentProjectDetail.project.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ memory: textarea.value }),
+        });
+        if (!res.ok) throw new Error('저장 실패');
+        const data = await res.json();
+        currentProjectDetail.project = data.project;
+        renderProjectMemory(data.project);
+        showToast('프로젝트 메모리를 저장했어요. 다음 회의록부터 반영됩니다.', { type: 'success' });
+    } catch (err) {
+        console.error(err);
+        showToast('메모리 저장 중 오류: ' + err.message, { type: 'error' });
+    } finally {
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '저장'; }
+    }
 }
 
 // ============================================
@@ -140,7 +190,7 @@ function closeProjectModal() {
 async function saveProjectModal() {
     const name = document.getElementById('projectModalName').value.trim();
     const description = document.getElementById('projectModalDescription').value.trim();
-    if (!name) { alert('프로젝트명을 입력해주세요.'); return; }
+    if (!name) { showToast('프로젝트명을 입력해주세요.', { type: 'error' }); return; }
 
     try {
         let url = `${API_BASE_URL}/projects`;
@@ -169,7 +219,7 @@ async function saveProjectModal() {
         }
     } catch (err) {
         console.error(err);
-        alert('저장 중 오류: ' + err.message);
+        showToast('저장 중 오류: ' + err.message, { type: 'error' });
     }
 }
 
@@ -184,7 +234,7 @@ async function deleteCurrentProject() {
         switchView('projects');
     } catch (err) {
         console.error(err);
-        alert('삭제 중 오류: ' + err.message);
+        showToast('삭제 중 오류: ' + err.message, { type: 'error' });
     }
 }
 
@@ -281,7 +331,10 @@ function renderContextList(scope, entries) {
     if (!listEl) return;
     listEl.innerHTML = '';
 
-    entries.forEach(e => {
+    const termEntries = entries.filter(e => (e.entry_type || 'term') === 'term');
+    const styleEntries = entries.filter(e => e.entry_type === 'style');
+
+    termEntries.forEach(e => {
         const row = document.createElement('div');
         row.className = 'context-row' + (e.source === 'auto' ? ' is-auto' : '');
         row.dataset.entryId = e.id;
@@ -308,6 +361,51 @@ function renderContextList(scope, entries) {
     listEl.querySelectorAll('[data-action="delete"]').forEach(btn => {
         btn.addEventListener('click', () => handleContextDelete(scope, btn.closest('.context-row')));
     });
+
+    renderStyleRules(scope, styleEntries);
+}
+
+// AI가 수정 패턴에서 학습한 스타일 선호 목록
+function renderStyleRules(scope, styleEntries) {
+    const section = document.getElementById(scope === 'project' ? 'projectStyleSection' : 'personalStyleSection');
+    const listEl = document.getElementById(scope === 'project' ? 'projectStyleList' : 'personalStyleList');
+    if (!section || !listEl) return;
+
+    listEl.innerHTML = '';
+    if (!styleEntries.length) {
+        section.hidden = true;
+        return;
+    }
+    section.hidden = false;
+
+    styleEntries.forEach(e => {
+        const row = document.createElement('div');
+        row.className = 'style-rule-row';
+        row.dataset.entryId = e.id;
+        row.innerHTML = `
+            <div class="style-rule-body">
+                <span class="style-rule-label"></span>
+                <span class="style-rule-text"></span>
+            </div>
+            <button class="btn-icon-mini danger" data-action="delete-style" type="button" title="이 규칙 삭제">삭제</button>
+        `;
+        row.querySelector('.style-rule-label').textContent = e.term;
+        row.querySelector('.style-rule-text').textContent = e.correction;
+        row.querySelector('[data-action="delete-style"]').addEventListener('click', async () => {
+            if (!confirm('이 스타일 규칙을 삭제할까요? 다음 회의록부터 적용되지 않습니다.')) return;
+            try {
+                const res = await authFetch(`${API_BASE_URL}/contexts/${e.id}`, { method: 'DELETE' });
+                if (!res.ok) throw new Error('삭제 실패');
+                row.remove();
+                if (!listEl.children.length) section.hidden = true;
+                showToast('스타일 규칙을 삭제했어요.', { type: 'success' });
+            } catch (err) {
+                console.error(err);
+                showToast('삭제 중 오류: ' + err.message, { type: 'error' });
+            }
+        });
+        listEl.appendChild(row);
+    });
 }
 
 async function handleContextSave(scope, row) {
@@ -316,7 +414,7 @@ async function handleContextSave(scope, row) {
     const correction = row.querySelector('[data-field="correction"]').value.trim();
     const note = row.querySelector('[data-field="note"]').value.trim();
     if (!term || !correction) {
-        alert('표기와 올바른 표기는 비울 수 없습니다.');
+        showToast('표기와 올바른 표기는 비울 수 없습니다.', { type: 'error' });
         return;
     }
     try {
@@ -332,7 +430,7 @@ async function handleContextSave(scope, row) {
         if (badge) badge.textContent = '직접';
     } catch (err) {
         console.error(err);
-        alert('저장 중 오류: ' + err.message);
+        showToast('저장 중 오류: ' + err.message, { type: 'error' });
     }
 }
 
@@ -349,7 +447,7 @@ async function handleContextDelete(scope, row) {
         }
     } catch (err) {
         console.error(err);
-        alert('삭제 중 오류: ' + err.message);
+        showToast('삭제 중 오류: ' + err.message, { type: 'error' });
     }
 }
 
@@ -358,7 +456,7 @@ async function handleContextAdd(scope, container) {
     const correction = container.querySelector('[data-field="correction"]').value.trim();
     const note = container.querySelector('[data-field="note"]').value.trim();
     if (!term || !correction) {
-        alert('표기와 올바른 표기는 비울 수 없습니다.');
+        showToast('표기와 올바른 표기는 비울 수 없습니다.', { type: 'error' });
         return;
     }
     const body = { term, correction, note: note || null };
@@ -389,6 +487,6 @@ async function handleContextAdd(scope, container) {
         }
     } catch (err) {
         console.error(err);
-        alert('추가 중 오류: ' + err.message);
+        showToast('추가 중 오류: ' + err.message, { type: 'error' });
     }
 }

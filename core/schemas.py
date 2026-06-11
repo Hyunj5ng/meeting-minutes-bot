@@ -49,6 +49,7 @@ class ProjectCreateRequest(BaseModel):
 class ProjectUpdateRequest(BaseModel):
     name: str | None = None
     description: str | None = None
+    memory: str | None = None  # AI 누적 메모리 직접 수정용
 
 
 class ContextEntryCreateRequest(BaseModel):
