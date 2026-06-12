@@ -35,13 +35,9 @@
                     <svg viewBox="0 0 20 20" fill="none"><rect x="7" y="2.5" width="6" height="9.5" rx="3" stroke="currentColor" stroke-width="1.6"/><path d="M4.5 9.5a5.5 5.5 0 0011 0M10 15v2.5M7.5 17.5h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
                     <span>새 회의록</span>
                 </button>
-                <button class="view-nav-btn" data-view="processing" id="navProcessing">
-                    <svg viewBox="0 0 20 20" fill="none"><path d="M3.5 11.5L5.8 5h8.4l2.3 6.5V15a1 1 0 01-1 1H4.5a1 1 0 01-1-1v-3.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M3.5 11.5h3.6l1.2 1.8h3.4l1.2-1.8h3.6" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
-                    <span>처리 내역</span> <span class="nav-badge" id="navProcessingBadge" hidden>0</span>
-                </button>
                 <button class="view-nav-btn" data-view="dashboard" id="navDashboard">
                     <svg viewBox="0 0 20 20" fill="none"><path d="M5.5 2.5h6l3.5 3.5v11a.5.5 0 01-.5.5h-9a.5.5 0 01-.5-.5v-14a.5.5 0 01.5-.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M11.5 2.5V6H15M7.5 10h5M7.5 13h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-                    <span>내 회의록</span>
+                    <span>내 회의록</span> <span class="nav-badge" id="navDashboardBadge" hidden>0</span>
                 </button>
                 <button class="view-nav-btn" data-view="context" id="navContext">
                     <svg viewBox="0 0 20 20" fill="none"><path d="M10 3.2c-.8-1-2.3-1.3-3.4-.7-1 .5-1.6 1.5-1.5 2.6-1.2.4-2 1.5-1.9 2.8-.8.9-.9 2.2-.2 3.2.5.8 1.4 1.2 2.3 1.2.2 1.2 1.2 2.1 2.4 2.2 1 .1 1.9-.4 2.3-1.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 3.2c.8-1 2.3-1.3 3.4-.7 1 .5 1.6 1.5 1.5 2.6 1.2.4 2 1.5 1.9 2.8.8.9.9 2.2.2 3.2-.5.8-1.4 1.2-2.3 1.2-.2 1.2-1.2 2.1-2.4 2.2-1 .1-1.9-.4-2.3-1.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 3.2v10.3M10 16.8v-3.3M7.2 7.2c.9.3 1.9.3 2.8 0M10 9.8c.9.4 2 .4 2.9 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -157,59 +153,6 @@
 
         </section>
 
-        <!-- 처리 중 (작업 큐 페이지) -->
-        <section class="dashboard-view" id="processingView" style="display: none;">
-            <div class="workflow-card job-queue-card" id="jobQueueCard">
-                <div class="job-queue-header">
-                    <h3>처리 중인 회의록 <span id="jobQueueCount">0</span>/3</h3>
-                    <p class="job-queue-hint">최대 3개를 동시에 처리합니다. 완료되면 알림과 함께 <strong>내 회의록</strong>에 쌓여요. 처리 중에는 이 탭을 닫지 마세요.</p>
-                </div>
-                <div class="dashboard-status" id="jobQueueEmpty">처리 중인 작업이 없습니다. <strong>새 회의록</strong>에서 음성 파일을 올려보세요.</div>
-                <div class="job-queue-list" id="jobQueueList"></div>
-            </div>
-
-            <!-- 작업 카드 템플릿 -->
-            <template id="jobCardTemplate">
-                <div class="job-card" data-state="pending">
-                    <div class="job-card-head">
-                        <div class="job-card-file">
-                            <p class="job-card-filename"></p>
-                            <p class="job-card-status">대기 중...</p>
-                        </div>
-                        <div class="job-card-actions">
-                            <button type="button" class="job-card-view" data-action="view" hidden>결과 보기</button>
-                            <button type="button" class="job-card-cancel" data-action="cancel" title="취소">
-                                <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-                                    <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="job-card-progress">
-                        <div class="job-card-progress-bar"><div class="job-card-progress-fill"></div></div>
-                        <span class="job-card-progress-pct">0%</span>
-                    </div>
-                    <div class="job-card-steps">
-                        <span class="job-card-step" data-step="upload">업로드</span>
-                        <span class="job-card-step" data-step="stt">STT</span>
-                        <span class="job-card-step" data-step="summarize">요약</span>
-                    </div>
-                    <p class="job-card-error" hidden></p>
-                </div>
-            </template>
-
-            <!-- 최근 7일 처리 내역 (메시지함 스타일, 무한 스크롤) -->
-            <div class="workflow-card dashboard-card">
-                <div class="dashboard-header">
-                    <h3>최근 7일 처리 내역</h3>
-                </div>
-                <div class="dashboard-status" id="activityStatus">불러오는 중...</div>
-                <div class="activity-list" id="activityList"></div>
-                <div class="activity-sentinel" id="activitySentinel" aria-hidden="true"></div>
-                <div class="dashboard-status" id="activityEndNote" hidden>최근 7일 내역을 모두 확인했어요. 더 오래된 회의록은 <strong>내 회의록</strong>에서 볼 수 있어요.</div>
-            </div>
-        </section>
-
         <!-- 회의록 상세/편집 페이지 -->
         <section class="dashboard-view" id="detailView" style="display: none;">
             <div class="workflow-card result-card" id="resultSection">
@@ -320,6 +263,7 @@
                         <input type="text" id="dashboardSearch" class="text-input" placeholder="제목, 파일명, 프로젝트, 본문 검색...">
                     </div>
                 </div>
+                <div class="dashboard-processing-banner" id="dashboardProcessingBanner" hidden></div>
                 <div class="dashboard-status" id="dashboardStatus">불러오는 중...</div>
                 <div class="dashboard-list" id="dashboardList"></div>
                 <div class="pagination" id="dashboardPagination" hidden>
@@ -522,6 +466,57 @@
             </div>
         </div>
     </main>
+
+    <!-- 전역 처리 도크 — 백그라운드 회의록 처리 (모든 화면 위에 떠 있음) -->
+    <div class="proc-dock" id="procDock" hidden>
+        <button class="proc-dock-pill" id="procDockPill" type="button" aria-expanded="false" aria-controls="procDockPanel">
+            <span class="proc-dock-pill-spinner" aria-hidden="true"></span>
+            <span class="proc-dock-pill-check" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M4 10.5L8.5 15L16 5.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+            <span class="proc-dock-pill-text" id="procDockPillText">처리 중</span>
+            <span class="proc-dock-pill-chevron" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M5 8L10 13L15 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+        </button>
+        <div class="proc-dock-panel" id="procDockPanel" hidden>
+            <div class="proc-dock-panel-head">
+                <span class="proc-dock-panel-title">백그라운드 처리</span>
+                <button class="proc-dock-panel-clear" id="procDockClear" type="button" hidden>완료 항목 지우기</button>
+                <button class="proc-dock-panel-collapse" id="procDockCollapse" type="button" aria-label="접기">
+                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 12L10 7L15 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+            </div>
+            <div class="proc-dock-list" id="dockJobList"></div>
+            <p class="proc-dock-hint">처리 중에는 탭을 닫지 마세요. 다른 화면은 자유롭게 둘러봐도 됩니다.</p>
+        </div>
+    </div>
+
+    <!-- 작업 카드 템플릿 (도크에서 사용) -->
+    <template id="jobCardTemplate">
+        <div class="job-card" data-state="pending">
+            <div class="job-card-head">
+                <div class="job-card-file">
+                    <p class="job-card-filename"></p>
+                    <p class="job-card-status">대기 중...</p>
+                </div>
+                <div class="job-card-actions">
+                    <button type="button" class="job-card-view" data-action="view" hidden>보기</button>
+                    <button type="button" class="job-card-retry" data-action="retry" hidden>다시 시도</button>
+                    <button type="button" class="job-card-cancel" data-action="cancel" title="취소">
+                        <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+                            <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="job-card-progress">
+                <div class="job-card-progress-bar"><div class="job-card-progress-fill"></div></div>
+                <span class="job-card-progress-pct">0%</span>
+            </div>
+            <p class="job-card-error" hidden></p>
+        </div>
+    </template>
 
     <!-- 푸터 -->
     <footer class="footer">

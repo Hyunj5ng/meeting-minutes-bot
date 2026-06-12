@@ -62,7 +62,7 @@ let dashboardQuery = '';              // 현재 검색어
 let dashboardPage = 1;                // 현재 페이지 (1부터)
 let dashboardTotal = 0;               // 전체 건수 (서버 total)
 const DASHBOARD_PAGE_SIZE = 10;
-let currentView = 'create';           // 'create' | 'processing' | 'dashboard' | 'detail' | 'context' | 'projectDetail' | 'mypage'
+let currentView = 'create';           // 'create' | 'dashboard' | 'detail' | 'context' | 'projectDetail' | 'mypage'
 let currentContextTab = 'projects';   // 컨텍스트 허브 하위 탭: 'projects' | 'personal'
 
 // 프로젝트/컨텍스트 상태

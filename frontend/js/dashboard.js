@@ -12,6 +12,7 @@ async function loadDashboard(query, page = 1) {
 
     statusEl.textContent = '불러오는 중...';
     listEl.innerHTML = '';
+    renderDashboardProcessingBanner();
 
     try {
         const skip = (dashboardPage - 1) * DASHBOARD_PAGE_SIZE;
@@ -130,101 +131,28 @@ async function deleteSummaryFromDashboard(summaryId, title) {
 }
 
 // ============================================
-// 처리 내역 피드 (최근 7일, 무한 스크롤)
+// 내 회의록 상단 "처리 중" 배너 (도크와 연동)
 // ============================================
-
-const ACTIVITY_PAGE_SIZE = 15;
-const ACTIVITY_DAYS = 7;
-let activitySkip = 0;
-let activityTotal = 0;
-let activityLoading = false;
-let activityObserver = null;
-
-function resetActivityFeed() {
-    activitySkip = 0;
-    activityTotal = 0;
-    const listEl = document.getElementById('activityList');
-    const endNote = document.getElementById('activityEndNote');
-    const statusEl = document.getElementById('activityStatus');
-    if (listEl) listEl.innerHTML = '';
-    if (endNote) endNote.hidden = true;
-    if (statusEl) statusEl.textContent = '불러오는 중...';
-    ensureActivityObserver();
-    loadActivityPage();
-}
-
-async function loadActivityPage() {
-    if (activityLoading) return;
-    if (activitySkip > 0 && activitySkip >= activityTotal) return;
-
-    const statusEl = document.getElementById('activityStatus');
-    const listEl = document.getElementById('activityList');
-    const endNote = document.getElementById('activityEndNote');
-    if (!listEl) return;
-
-    activityLoading = true;
-    try {
-        const params = new URLSearchParams({
-            days: String(ACTIVITY_DAYS),
-            skip: String(activitySkip),
-            limit: String(ACTIVITY_PAGE_SIZE),
-        });
-        const res = await authFetch(`${API_BASE_URL}/summaries?${params.toString()}`);
-        if (!res.ok) throw new Error('처리 내역 조회 실패');
-        const data = await res.json();
-        const records = data.records || [];
-        activityTotal = data.total ?? records.length;
-
-        if (statusEl && activitySkip === 0) {
-            statusEl.textContent = activityTotal > 0
-                ? `최근 ${ACTIVITY_DAYS}일간 ${activityTotal}건`
-                : `최근 ${ACTIVITY_DAYS}일간 처리한 회의록이 없습니다.`;
-        }
-
-        records.forEach(rec => appendActivityRow(listEl, rec));
-        activitySkip += records.length;
-
-        if (endNote && activityTotal > 0 && activitySkip >= activityTotal) {
-            endNote.hidden = false;
-        }
-    } catch (err) {
-        console.error(err);
-        if (statusEl) statusEl.textContent = '처리 내역을 불러오지 못했습니다: ' + err.message;
-    } finally {
-        activityLoading = false;
+function renderDashboardProcessingBanner() {
+    const el = document.getElementById('dashboardProcessingBanner');
+    if (!el) return;
+    const active = typeof getActiveJobCount === 'function' ? getActiveJobCount() : 0;
+    if (active <= 0) {
+        el.hidden = true;
+        el.innerHTML = '';
+        return;
     }
-}
-
-function appendActivityRow(listEl, rec) {
-    const row = document.createElement('div');
-    row.className = 'activity-item' + (rec.is_unread ? ' is-unread' : '');
-
-    const title = rec.meeting_title || rec.filename || `요약 #${rec.id}`;
-    const dateStr = rec.created_at ? formatDateKo(rec.created_at) : '';
-    const unreadDot = rec.is_unread ? '<span class="unread-dot" title="아직 열어보지 않았어요"></span>' : '';
-    const projChip = rec.project_name ? `<span class="meta-chip">${escapeHtml(rec.project_name)}</span>` : '';
-
-    row.innerHTML = `
-        <div class="activity-item-main">
-            ${unreadDot}
-            <span class="activity-item-title">${escapeHtml(title)}</span>
-            ${projChip}
-        </div>
-        <span class="activity-item-time">${dateStr}</span>
+    el.hidden = false;
+    el.innerHTML = `
+        <span class="dpb-spinner" aria-hidden="true"></span>
+        <span class="dpb-text">${active}개 회의록을 처리하고 있어요. 완료되면 이 목록에 쌓입니다.</span>
+        <button type="button" class="dpb-link" id="dpbOpenDock">진행 상황</button>
     `;
-    row.addEventListener('click', () => openSummaryFromDashboard(rec.id));
-    listEl.appendChild(row);
-}
-
-// 스크롤이 sentinel에 닿으면 다음 페이지 자동 로드
-function ensureActivityObserver() {
-    if (activityObserver) return;
-    const sentinel = document.getElementById('activitySentinel');
-    if (!sentinel || typeof IntersectionObserver === 'undefined') return;
-    activityObserver = new IntersectionObserver((entries) => {
-        if (entries.some(e => e.isIntersecting)) loadActivityPage();
-    }, { rootMargin: '240px' });
-    activityObserver.observe(sentinel);
+    const btn = el.querySelector('#dpbOpenDock');
+    if (btn) btn.addEventListener('click', () => {
+        if (typeof ensureDockVisible === 'function') ensureDockVisible();
+        if (typeof setDockExpanded === 'function') setDockExpanded(true);
+    });
 }
 
 // 회의록 열기 → 상세/편집 페이지 (서버에서 읽음 처리됨)
@@ -240,6 +168,9 @@ async function openSummaryFromDashboard(summaryId) {
         const sumData = await sumRes.json();
         const verData = await verRes.json();
         const record = sumData.record;
+
+        // 열람 처리: 내 회의록 배지에서 제거 + 도크의 완료 카드 정리
+        if (typeof markSummaryViewed === 'function') markSummaryViewed(summaryId);
 
         resultData = {
             summary: record.summary,

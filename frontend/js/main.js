@@ -10,7 +10,6 @@ function switchView(view) {
     currentView = view;
     const views = {
         create: document.getElementById('createView'),
-        processing: document.getElementById('processingView'),
         dashboard: document.getElementById('dashboardView'),
         detail: document.getElementById('detailView'),
         context: document.getElementById('contextView'),
@@ -19,7 +18,6 @@ function switchView(view) {
     };
     const navButtons = {
         create: document.getElementById('navCreate'),
-        processing: document.getElementById('navProcessing'),
         dashboard: document.getElementById('navDashboard'),
         context: document.getElementById('navContext'),
         mypage: document.getElementById('navMyPage'),
@@ -47,7 +45,6 @@ function switchView(view) {
 
     // 진입 시 자동 로드
     if (view === 'dashboard') loadDashboard(dashboardQuery, dashboardPage);
-    if (view === 'processing') resetActivityFeed();
     if (view === 'context') switchContextTab(currentContextTab);
     if (view === 'mypage') loadMyPage();
 
@@ -120,15 +117,16 @@ function setupEventListeners() {
 
     // 뷰 전환 네비
     const navCreate = document.getElementById('navCreate');
-    const navProcessing = document.getElementById('navProcessing');
     const navDashboard = document.getElementById('navDashboard');
     const navContext = document.getElementById('navContext');
     const navMyPage = document.getElementById('navMyPage');
     if (navCreate) navCreate.addEventListener('click', () => switchView('create'));
-    if (navProcessing) navProcessing.addEventListener('click', () => switchView('processing'));
     if (navDashboard) navDashboard.addEventListener('click', () => switchView('dashboard'));
     if (navContext) navContext.addEventListener('click', () => switchView('context'));
     if (navMyPage) navMyPage.addEventListener('click', () => switchView('mypage'));
+
+    // 전역 처리 도크 컨트롤 바인딩
+    if (typeof initDock === 'function') initDock();
 
     // 컨텍스트 허브 하위 탭
     document.querySelectorAll('[data-context-tab]').forEach(btn => {

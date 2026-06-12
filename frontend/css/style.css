@@ -890,34 +890,149 @@ button {
 }
 
 /* ============================================
-   작업 큐 (다중 동시 처리)
+   처리 도크 (전역 백그라운드 처리) + 작업 카드
    ============================================ */
-.job-queue-card {
-    animation: fadeIn 0.3s ease;
-}
-
-.job-queue-header h3 {
-    font-size: 1.0625rem;
-    font-weight: 700;
-    color: var(--text-strong);
-    margin-bottom: 0.2rem;
-}
-
-.job-queue-header h3 #jobQueueCount {
-    color: var(--brand-600);
-}
-
-.job-queue-hint {
-    color: var(--text-muted);
-    font-size: 0.8125rem;
-    margin-bottom: 1.125rem;
-}
-
-.job-queue-list {
+.proc-dock {
+    position: fixed;
+    right: 1.25rem;
+    bottom: 1.25rem;
+    z-index: 1500;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    align-items: flex-end;
+    gap: 0.6rem;
+    width: min(360px, calc(100vw - 2rem));
+    pointer-events: none;
 }
+
+.proc-dock[hidden] { display: none; }
+.proc-dock > * { pointer-events: auto; }
+
+/* 접힌 알약 */
+.proc-dock-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.5rem 0.65rem 0.5rem 0.85rem;
+    box-shadow: var(--shadow-lg);
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-strong);
+    transition: border-color 0.15s ease;
+}
+
+.proc-dock-pill:hover { border-color: var(--border-strong); }
+.proc-dock.is-active .proc-dock-pill { border-color: var(--brand-300); }
+.proc-dock-pill-text { font-variant-numeric: tabular-nums; }
+
+.proc-dock-pill-spinner {
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    border: 2px solid var(--brand-200);
+    border-top-color: var(--brand-600);
+    animation: dockSpin 0.7s linear infinite;
+    flex-shrink: 0;
+}
+
+.proc-dock-pill-check {
+    display: none;
+    color: var(--brand-600);
+    line-height: 0;
+    flex-shrink: 0;
+}
+
+.proc-dock.is-idle .proc-dock-pill-spinner { display: none; }
+.proc-dock.is-idle .proc-dock-pill-check { display: inline-flex; }
+
+.proc-dock-pill-chevron {
+    color: var(--text-muted);
+    line-height: 0;
+    transition: transform 0.2s ease;
+}
+
+.proc-dock.is-expanded .proc-dock-pill-chevron { transform: rotate(180deg); }
+
+@keyframes dockSpin { to { transform: rotate(360deg); } }
+
+/* 펼친 패널 */
+.proc-dock-panel {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+    animation: dockPanelIn 0.18s ease;
+}
+
+.proc-dock-panel[hidden] { display: none; }
+
+@keyframes dockPanelIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.proc-dock-panel-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 0.875rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.proc-dock-panel-title {
+    flex: 1;
+    font-weight: 700;
+    font-size: 0.9375rem;
+    color: var(--text-strong);
+}
+
+.proc-dock-panel-clear {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0.2rem 0.4rem;
+    border-radius: var(--radius-sm);
+}
+.proc-dock-panel-clear:hover { color: var(--text-strong); background: var(--bg); }
+.proc-dock-panel-clear[hidden] { display: none; }
+
+.proc-dock-panel-collapse {
+    display: inline-flex;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0.2rem;
+    border-radius: var(--radius-sm);
+}
+.proc-dock-panel-collapse:hover { color: var(--text-strong); background: var(--bg); }
+
+.proc-dock-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.75rem 0.875rem;
+    max-height: min(52vh, 420px);
+    overflow-y: auto;
+}
+
+.proc-dock-hint {
+    padding: 0 0.875rem 0.75rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* 도크 안의 작업 카드는 조금 더 콤팩트 */
+.proc-dock .job-card { padding: 0.75rem 0.85rem; }
 
 .job-card {
     background: var(--surface);
@@ -991,6 +1106,30 @@ button {
 
 .job-card-view:hover {
     background: var(--brand-700);
+}
+
+.job-card-retry {
+    background: transparent;
+    border: 1px solid var(--brand-300);
+    color: var(--brand-700);
+    border-radius: var(--radius-sm);
+    padding: 0.35rem 0.75rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.job-card-retry:hover {
+    background: var(--brand-50);
+    border-color: var(--brand-500);
+}
+
+/* 액션 버튼 숨김 — .job-card-cancel은 display:flex라 [hidden] 명시 오버라이드 필요 */
+.job-card-view[hidden],
+.job-card-retry[hidden],
+.job-card-cancel[hidden] {
+    display: none;
 }
 
 .job-card-cancel {
@@ -2207,67 +2346,45 @@ button {
 }
 
 /* ============================================
-   처리 내역 피드 (메시지함 스타일)
+   내 회의록 상단 처리 중 배너 (도크와 연동)
    ============================================ */
-.activity-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-}
-
-.activity-item {
+.dashboard-processing-banner {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.7rem 0.875rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-
-.activity-item:hover {
-    border-color: var(--brand-500);
-    box-shadow: var(--shadow-sm);
-}
-
-.activity-item.is-unread {
-    border-left: 3px solid var(--brand-500);
+    gap: 0.6rem;
+    padding: 0.7rem 0.9rem;
+    margin-bottom: 0.875rem;
     background: var(--brand-50);
-}
-
-.activity-item-main {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex: 1;
-    min-width: 0;
-}
-
-.activity-item-title {
+    border: 1px solid var(--brand-200);
+    border-radius: var(--radius-md);
     font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--text-strong);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    color: var(--brand-800);
 }
 
-.activity-item.is-unread .activity-item-title {
-    font-weight: 700;
-}
+.dashboard-processing-banner[hidden] { display: none; }
 
-.activity-item-time {
+.dpb-text { flex: 1; }
+
+.dpb-link {
     flex-shrink: 0;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    font-variant-numeric: tabular-nums;
+    background: transparent;
+    border: none;
+    color: var(--brand-700);
+    font-weight: 700;
+    font-size: 0.8125rem;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
 }
 
-.activity-sentinel {
-    height: 1px;
+.dpb-spinner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid var(--brand-200);
+    border-top-color: var(--brand-600);
+    animation: dockSpin 0.7s linear infinite;
+    flex-shrink: 0;
 }
 
 /* ============================================
@@ -2421,6 +2538,19 @@ button {
 
     .tab {
         white-space: nowrap;
+    }
+
+    /* 처리 도크: 모바일에서는 하단 가로 전체 */
+    .proc-dock {
+        right: 0.75rem;
+        left: 0.75rem;
+        bottom: 0.75rem;
+        width: auto;
+        align-items: stretch;
+    }
+
+    .proc-dock-pill {
+        align-self: flex-end;
     }
 }
 

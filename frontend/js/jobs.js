@@ -64,8 +64,17 @@ async function handleConvert() {
 
     runJobQueue();
 
-    // 처리 중 페이지로 이동 — 진행 상황은 거기서 확인
-    switchView('processing');
+    // 화면 이동 없음 — 처리는 우측 하단 도크에서 백그라운드로 진행된다.
+    // 사용자는 새 파일을 더 올리거나 다른 화면으로 자유롭게 이동할 수 있다.
+    ensureDockVisible();
+    setDockExpanded(true);
+    const startedCount = getActiveJobCount();
+    showToast(
+        startedCount > 1
+            ? `${startedCount}개 회의록을 백그라운드에서 처리 중이에요. 완료되면 알려드릴게요.`
+            : '백그라운드에서 처리를 시작했어요. 완료되면 알려드릴게요.',
+        { type: 'info', duration: 5000 }
+    );
 }
 
 function makeJob(files, durations, options, mergeMode) {
@@ -125,6 +134,7 @@ async function startJob(job) {
 
         job.status = 'done';
         job.progress = 100;
+        if (job.summaryId) doneUnviewed.add(job.summaryId);
         updateJobCard(job, { status: '회의록 생성 완료! 이메일로도 보내드렸어요.', pct: 100, state: 'done', stage: 'summarize', stageDone: true });
         fetchUsageInfo();
         announceJobDone(job);
@@ -289,7 +299,7 @@ async function jobSummarize(job) {
 
 // 작업 카드 UI 렌더링
 function renderJobCard(job) {
-    const list = document.getElementById('jobQueueList');
+    const list = document.getElementById('dockJobList');
     const tpl = document.getElementById('jobCardTemplate');
     if (!list || !tpl) return;
 
@@ -304,9 +314,11 @@ function renderJobCard(job) {
 
     node.querySelector('[data-action="cancel"]').addEventListener('click', () => cancelJob(job));
     node.querySelector('[data-action="view"]').addEventListener('click', () => viewJobResult(job));
+    node.querySelector('[data-action="retry"]').addEventListener('click', () => retryJob(job));
 
     list.appendChild(node);
     job.cardEl = node;
+    ensureDockVisible();
 }
 
 function updateJobCard(job, { status, pct, state, stage, stageDone, error }) {
@@ -349,37 +361,40 @@ function updateJobCard(job, { status, pct, state, stage, stageDone, error }) {
         }
     }
 
-    // 완료 시 결과 보기 버튼 노출, 취소 버튼 숨김
+    // 액션 버튼 상태: 진행/대기 → 취소 / 완료 → 보기 / 실패·취소 → 다시 시도 + 닫기
     const viewBtn = card.querySelector('[data-action="view"]');
+    const retryBtn = card.querySelector('[data-action="retry"]');
     const cancelBtn = card.querySelector('[data-action="cancel"]');
     if (state === 'done') {
         if (viewBtn) viewBtn.hidden = false;
+        if (retryBtn) retryBtn.hidden = true;
         if (cancelBtn) cancelBtn.hidden = true;
     } else if (state === 'failed' || state === 'canceled') {
         if (viewBtn) viewBtn.hidden = true;
+        if (retryBtn) retryBtn.hidden = false;
         if (cancelBtn) {
             // 닫기(제거) 버튼으로 전환
             cancelBtn.hidden = false;
             cancelBtn.title = '카드 제거';
+        }
+    } else if (state === 'running' || state === 'pending') {
+        // 재시도로 다시 진행 중이 된 경우 버튼 원상복구
+        if (viewBtn) viewBtn.hidden = true;
+        if (retryBtn) retryBtn.hidden = true;
+        if (cancelBtn) {
+            cancelBtn.hidden = false;
+            cancelBtn.title = '취소';
         }
     }
 }
 
 function refreshJobQueueCount() {
     const active = getActiveJobCount();
-    const countEl = document.getElementById('jobQueueCount');
-    if (countEl) countEl.textContent = String(active);
-
-    // 네비 "처리 내역" 배지: 활성 작업 수 (없으면 숨김)
-    const badge = document.getElementById('navProcessingBadge');
-    if (badge) {
-        badge.textContent = String(active);
-        badge.hidden = active === 0;
-    }
-
-    // 처리 중 페이지 empty state
-    const emptyEl = document.getElementById('jobQueueEmpty');
-    if (emptyEl) emptyEl.style.display = jobsById.size === 0 ? '' : 'none';
+    // 도크 알약/요약 상태 갱신 (비면 자동 숨김)
+    updateDockSummary(active);
+    // 내 회의록 네비 배지(완료·미열람) + 목록 상단 처리 중 배너
+    updateDashboardBadge();
+    if (typeof renderDashboardProcessingBanner === 'function') renderDashboardProcessingBanner();
 }
 
 function cancelJob(job) {
@@ -423,9 +438,9 @@ function announceJobDone(job) {
         actionLabel: '바로 보기',
         onAction: () => viewJobResult(job),
     });
-    // 처리 내역 화면을 보고 있으면 피드 갱신
-    if (currentView === 'processing' && typeof resetActivityFeed === 'function') {
-        resetActivityFeed();
+    // 내 회의록 목록을 보고 있으면 새 회의록이 바로 뜨도록 갱신
+    if (currentView === 'dashboard' && typeof loadDashboard === 'function') {
+        loadDashboard(dashboardQuery, dashboardPage);
     }
 }
 
@@ -437,4 +452,127 @@ async function viewJobResult(job) {
 
 function showJobToast(job, message) {
     showToast(`${job.displayName} — ${message}`, { type: 'info', duration: 6000 });
+}
+
+// ============================================
+// 처리 도크 (전역, 모든 화면 위) — 백그라운드 처리 ambient 표시
+// ============================================
+
+// 이번 세션에서 완료됐지만 아직 열어보지 않은 회의록 (내 회의록 배지 카운트)
+const doneUnviewed = new Set();
+
+function getDockEls() {
+    return {
+        dock: document.getElementById('procDock'),
+        pill: document.getElementById('procDockPill'),
+        pillText: document.getElementById('procDockPillText'),
+        panel: document.getElementById('procDockPanel'),
+        clearBtn: document.getElementById('procDockClear'),
+    };
+}
+
+function ensureDockVisible() {
+    const { dock } = getDockEls();
+    if (dock) dock.hidden = false;
+}
+
+function setDockExpanded(expanded) {
+    const { dock, pill, panel } = getDockEls();
+    if (!dock || !panel || !pill) return;
+    panel.hidden = !expanded;
+    pill.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    dock.classList.toggle('is-expanded', expanded);
+}
+
+function toggleDock() {
+    const { panel } = getDockEls();
+    if (!panel) return;
+    setDockExpanded(panel.hidden); // 접혀(숨김) 있으면 펼친다
+}
+
+// 도크 컨트롤 이벤트 바인딩 (main.js 부트스트랩에서 1회 호출)
+function initDock() {
+    const { pill } = getDockEls();
+    const collapseBtn = document.getElementById('procDockCollapse');
+    const clearBtn = document.getElementById('procDockClear');
+    if (pill) pill.addEventListener('click', toggleDock);
+    if (collapseBtn) collapseBtn.addEventListener('click', (e) => { e.stopPropagation(); setDockExpanded(false); });
+    if (clearBtn) clearBtn.addEventListener('click', clearFinishedJobs);
+}
+
+// 도크 알약/요약 상태 갱신 — 카드가 하나도 없으면 도크 자체를 숨김
+function updateDockSummary(active) {
+    const { dock, pill, pillText, clearBtn } = getDockEls();
+    if (!dock || !pill || !pillText) return;
+
+    if (jobsById.size === 0) {
+        dock.hidden = true;
+        setDockExpanded(false);
+        dock.classList.remove('is-active', 'is-idle');
+        return;
+    }
+    dock.hidden = false;
+
+    const finished = [...jobsById.values()].filter(j => ['done', 'failed', 'canceled'].includes(j.status));
+    const hasActive = active > 0;
+    dock.classList.toggle('is-active', hasActive);
+    dock.classList.toggle('is-idle', !hasActive);
+
+    if (hasActive) {
+        pillText.textContent = `${active}개 처리 중`;
+    } else {
+        const doneCount = finished.filter(j => j.status === 'done').length;
+        const failCount = finished.filter(j => j.status !== 'done').length;
+        if (failCount > 0 && doneCount > 0) pillText.textContent = `완료 ${doneCount} · 실패 ${failCount}`;
+        else if (failCount > 0) pillText.textContent = `${failCount}개 처리 실패`;
+        else pillText.textContent = `${doneCount}개 완료`;
+    }
+
+    // "완료 항목 지우기": 끝난 작업이 있을 때만 노출
+    if (clearBtn) clearBtn.hidden = finished.length === 0;
+}
+
+// 완료/실패/취소된 카드 일괄 제거
+function clearFinishedJobs() {
+    [...jobsById.values()]
+        .filter(j => ['done', 'failed', 'canceled'].includes(j.status))
+        .forEach(j => removeJobCard(j));
+    refreshJobQueueCount();
+}
+
+// 내 회의록 네비 배지 — 완료했지만 아직 열어보지 않은 수
+function updateDashboardBadge() {
+    const badge = document.getElementById('navDashboardBadge');
+    if (!badge) return;
+    const n = doneUnviewed.size;
+    badge.textContent = String(n);
+    badge.hidden = n === 0;
+}
+
+// 회의록을 열었을 때 호출 — 배지에서 제거 + 도크의 해당 완료 카드 정리
+function markSummaryViewed(summaryId) {
+    const id = Number(summaryId);
+    if (doneUnviewed.has(id)) {
+        doneUnviewed.delete(id);
+        updateDashboardBadge();
+    }
+    const job = [...jobsById.values()].find(j => Number(j.summaryId) === id && j.status === 'done');
+    if (job) removeJobCard(job);
+}
+
+// 실패/취소 작업 재시도 — 파일이 메모리에 남아있어 재실행 가능
+function retryJob(job) {
+    if (!['failed', 'canceled'].includes(job.status)) return;
+    job.status = 'queued';
+    job.error = null;
+    job.progress = 0;
+    job.stage = null;
+    job.xhr = null;
+    job.transcriptId = null;
+    job.transcript = null;
+    job.summary = null;
+    job.summaryId = null;
+    updateJobCard(job, { status: '대기 중 — 곧 다시 시작합니다', pct: 0, state: 'pending', error: null });
+    refreshJobQueueCount();
+    runJobQueue();
 }
