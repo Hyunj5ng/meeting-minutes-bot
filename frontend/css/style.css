@@ -740,6 +740,45 @@ button {
     font-weight: 700;
 }
 
+/* 합치기 순서 드래그 정렬 */
+.merge-order-hint {
+    margin: 0 0 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.file-info-item-drag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    cursor: grab;
+    flex-shrink: 0;
+    border-radius: var(--radius-sm);
+    transition: color 0.15s ease;
+}
+
+.file-info-item-drag:hover {
+    color: var(--brand-600);
+}
+
+.file-info-item.dragging {
+    opacity: 0.5;
+}
+
+.file-info-item.dragging .file-info-item-drag {
+    cursor: grabbing;
+}
+
+/* 드롭 위치 표시선 */
+.file-info-item.drag-over-before {
+    box-shadow: inset 0 2px 0 var(--brand-600);
+}
+
+.file-info-item.drag-over-after {
+    box-shadow: inset 0 -2px 0 var(--brand-600);
+}
+
 /* 합치기 토글 */
 .merge-toggle {
     display: grid;

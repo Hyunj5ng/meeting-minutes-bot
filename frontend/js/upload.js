@@ -117,6 +117,13 @@ function renderFileList() {
         li.innerHTML = `
             <div class="file-info-item-row">
                 <div class="file-info-item-meta">
+                    ${mergeOn ? `<span class="file-info-item-drag" title="드래그해서 순서 변경" aria-label="순서 변경 핸들">
+                        <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                            <circle cx="7" cy="5" r="1.5"/><circle cx="13" cy="5" r="1.5"/>
+                            <circle cx="7" cy="10" r="1.5"/><circle cx="13" cy="10" r="1.5"/>
+                            <circle cx="7" cy="15" r="1.5"/><circle cx="13" cy="15" r="1.5"/>
+                        </svg>
+                    </span>` : ''}
                     <span class="file-info-item-order">${idx + 1}</span>
                     <span class="file-info-item-name"></span>
                     <span class="file-info-item-size"></span>
@@ -182,8 +189,15 @@ function renderFileList() {
             if (fileMetas[idx]) fileMetas[idx].newProjectName = e.target.value;
         });
 
+        // 합치기 모드에서만 드래그 정렬 활성화 (순서가 곧 회의 진행 순서)
+        if (mergeOn) bindFileDrag(li, idx);
+
         itemsEl.appendChild(li);
     });
+
+    // 순서 변경 안내: 합치기 모드일 때만 표시
+    const hintEl = document.getElementById('mergeOrderHint');
+    if (hintEl) hintEl.hidden = !mergeOn;
 
     // 합치기 토글: 2개 이상일 때만 의미 있음
     if (mergeToggle) {
@@ -191,6 +205,79 @@ function renderFileList() {
         if (parent) parent.style.display = selectedFiles.length >= 2 ? 'grid' : 'none';
         if (selectedFiles.length < 2) mergeToggle.checked = false;
     }
+}
+
+// ============================================
+// 합치기 순서 드래그 정렬
+// ============================================
+
+let dragSrcIndex = null;   // 현재 드래그 중인 파일의 인덱스
+
+// 한 파일 카드에 드래그 정렬 동작을 연결.
+// 핸들(⠿)에서 mousedown해야만 li가 draggable이 되어, 카드 내 입력 필드와 충돌하지 않는다.
+function bindFileDrag(li, idx) {
+    const handle = li.querySelector('.file-info-item-drag');
+    if (!handle) return;
+    handle.style.cursor = 'grab';
+
+    handle.addEventListener('mousedown', () => li.setAttribute('draggable', 'true'));
+    handle.addEventListener('mouseup', () => li.removeAttribute('draggable'));
+
+    li.addEventListener('dragstart', (e) => {
+        dragSrcIndex = idx;
+        li.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        // 일부 브라우저는 데이터가 있어야 drop을 허용함
+        try { e.dataTransfer.setData('text/plain', String(idx)); } catch (_) {}
+    });
+
+    li.addEventListener('dragend', () => {
+        li.removeAttribute('draggable');
+        li.classList.remove('dragging');
+        clearDropIndicators();
+        dragSrcIndex = null;
+    });
+
+    li.addEventListener('dragover', (e) => {
+        if (dragSrcIndex === null || dragSrcIndex === idx) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        // 마우스가 카드 상/하 절반 중 어디인지로 삽입 위치 표시
+        const rect = li.getBoundingClientRect();
+        const after = e.clientY > rect.top + rect.height / 2;
+        clearDropIndicators();
+        li.classList.add(after ? 'drag-over-after' : 'drag-over-before');
+    });
+
+    li.addEventListener('dragleave', () => {
+        li.classList.remove('drag-over-before', 'drag-over-after');
+    });
+
+    li.addEventListener('drop', (e) => {
+        e.preventDefault();
+        if (dragSrcIndex === null || dragSrcIndex === idx) return;
+        const rect = li.getBoundingClientRect();
+        const after = e.clientY > rect.top + rect.height / 2;
+        let target = after ? idx + 1 : idx;
+        // 위쪽 항목을 제거하면 타겟 인덱스가 한 칸 당겨짐
+        if (dragSrcIndex < target) target -= 1;
+        reorderFiles(dragSrcIndex, target);
+    });
+}
+
+function clearDropIndicators() {
+    document.querySelectorAll('.file-info-item.drag-over-before, .file-info-item.drag-over-after')
+        .forEach(el => el.classList.remove('drag-over-before', 'drag-over-after'));
+}
+
+// 세 병렬 배열(selectedFiles / audioDurations / fileMetas)을 동시에 같은 순서로 재배치
+function reorderFiles(from, to) {
+    if (from === to || from < 0 || to < 0) return;
+    const move = (arr) => { const [v] = arr.splice(from, 1); arr.splice(to, 0, v); };
+    move(selectedFiles);
+    move(audioDurations);
+    move(fileMetas);
+    renderFileList();
 }
 
 // 파일 카드의 프로젝트 select 옵션 채우기 (projectsCache 기반)
